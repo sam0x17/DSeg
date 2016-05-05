@@ -43,3 +43,21 @@ up into the following steps.
    * The object images should all be re-scaled to the same dimensions and have SLIC re-run.
    * Set the number of nodes to equal the number of unique poses in the database.
    * Do not terminate training until at least 98% are of the poses are mapped uniquely.
+
+## Inference Pipeline
+
+For inference, perform the following steps. At inference time, our input as a scene
+image that may or may not contain one or more instances of the object class we
+trained on.
+
+1. Run SLIC algorithm on input image, breaking it up into superpixels.
+
+2. Loop over each superpixel in the image, feeding this superpixel and the nearest
+   5 superpixels to the neural network. After this process, group the contiguous
+   positive activations into groups of minimum size 4 and evict outliers.
+
+3. If no groups, return empty, otherwise scale and re-SLIC each group so we have
+   roughly uniform superpixel sizes.
+
+4. Feed resulting group(s) to the Kohonen SOM map. It should map to the bucket
+   corresponding to that particular pose. 
