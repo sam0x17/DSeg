@@ -20,6 +20,8 @@ if [[ $sum = *$vlsum* ]]
     mkdir -p ../vlfeat
     echo "copying binaries to bin/vlfeat"
     cp -r vlfeat-0.9.20/bin/glnxa64/* ../vlfeat || exit 1
+    echo "copying headers to bin/vlfeat"
+    cp -r vlfeat-0.9.20/vl/* ../vlfeat || exit 1
     echo "done"
   else
     echo "bad checksum: $sum  expected: $vlsum"
