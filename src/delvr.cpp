@@ -4,8 +4,8 @@
 #include <boost/multi_array.hpp>
 
 extern "C" {
-    #include "generic.h"
-    #include "slic.h"
+    #include <vl/generic.h>
+    #include <vl/slic.h>
 }
 
 typedef boost::multi_array<float, 3> delvr_img;
@@ -50,14 +50,15 @@ int main(int argc, char** argv) {
     }
   }
   delvr_seg seg(boost::extents[w][h]);
-  vl_slic_segment (seg_data(seg),
-                   img_data(img),
-                   (vl_size)w,
-                   (vl_size)h,
-                   (vl_size)4,
-                   (vl_size)16,
-                   0.5,
-                   (vl_size)5);
+  vl_uint32 *segmentation = seg_data(seg);
+  float const *image = img_data(img);
+  vl_size width = (vl_size)w;
+  vl_size height = (vl_size)h;
+  vl_size numChannels = (vl_size)4;
+  vl_size regionSize = (vl_size)16;
+  float regularization = 0.5;
+  vl_size minRegionSize = (vl_size)5;
+  vl_slic_segment(segmentation, image, width, height, numChannels, regionSize, regularization, minRegionSize);
   destroy_img(img);
   destroy_seg(seg);
   return 0;

@@ -16,12 +16,6 @@ if [[ $sum = *$vlsum* ]]
     echo "extracting archive..."
     tar -xzvf vlfeat-0.9.20-bin.tar.gz || exit 1
     mv vlfeat-0.9.20 ../ || exit 1
-    cd ../
-    mkdir -p ../vlfeat
-    echo "copying binaries to bin/vlfeat"
-    cp -r vlfeat-0.9.20/bin/glnxa64/* ../vlfeat || exit 1
-    echo "copying headers to bin/vlfeat"
-    cp -r vlfeat-0.9.20/vl/* ../vlfeat || exit 1
     echo "done"
   else
     echo "bad checksum: $sum  expected: $vlsum"
