@@ -15,6 +15,7 @@ if [[ $sum = *$vlsum* ]]
     echo "md5 sum was valid ($sum)"
     echo "extracting archive..."
     tar -xzvf vlfeat-0.9.20-bin.tar.gz || exit 1
+    cp vlfeat-0.9.20/bin/glnxa64/libvl.so ../../
     mv vlfeat-0.9.20 ../ || exit 1
     echo "done"
   else
