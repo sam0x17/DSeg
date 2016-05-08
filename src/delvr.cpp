@@ -8,59 +8,87 @@ extern "C" {
     #include <vl/slic.h>
 }
 
-typedef boost::multi_array<float, 3> delvr_img;
-typedef delvr_img::index ind;
-const ind R = 0;
-const ind G = 1;
-const ind B = 2;
-const ind A = 3;
-
-typedef boost::multi_array<vl_uint32, 2> delvr_seg;
-typedef delvr_seg::index seg_ind;
-
-float *img_data(delvr_img &img) {
-  return (float *)img.data();
-}
-
-vl_uint32 *seg_data(delvr_seg &seg) {
-  return (vl_uint32 *)seg.data();
-}
-
-void destroy_img(delvr_img &img) {
-  img.resize(boost::extents[0][0][0]);
-}
-
-void destroy_seg(delvr_seg &seg) {
-  seg.resize(boost::extents[0][0]);
-}
-
 int main(int argc, char** argv) {
-  std::cout << "Delvr 1.0 Loaded." << std::endl;
-  std::cout << "Copyright (C) Sam Kelly -- all rights reserved" << std::endl;
-  std::cout << std::endl;
-  int w = 1000;
-  int h = 1000;
-  delvr_img img(boost::extents[w][h][4]);
-  for(ind x = 0; x < 1000; x++) {
-    for(ind y = 0; y < 1000; y++) {
-      img[x][y][R] = 0.4;
-      img[x][y][G] = 0.6;
-      img[x][y][B] = 0.8;
-      img[x][y][A] = 0.01;
-    }
+  // loading routine based on https://github.com/davidstutz/vlfeat-slic-example
+  cv::Mat mat = cv::imread("../carrier.jpg", CV_LOAD_IMAGE_COLOR);
+
+  // convert to 1 dimensional
+  float* image = new float[mat.rows*mat.cols*mat.channels()];
+  for (int i = 0; i < mat.rows; ++i) {
+      for (int j = 0; j < mat.cols; ++j) {
+          // Assuming three channels ...
+          image[j + mat.cols*i + mat.cols*mat.rows*0] = mat.at<cv::Vec3b>(i, j)[0];
+          image[j + mat.cols*i + mat.cols*mat.rows*1] = mat.at<cv::Vec3b>(i, j)[1];
+          image[j + mat.cols*i + mat.cols*mat.rows*2] = mat.at<cv::Vec3b>(i, j)[2];
+      }
   }
-  delvr_seg seg(boost::extents[w][h]);
-  vl_uint32 *segmentation = seg_data(seg);
-  float const *image = img_data(img);
-  vl_size width = (vl_size)w;
-  vl_size height = (vl_size)h;
-  vl_size numChannels = (vl_size)4;
-  vl_size regionSize = (vl_size)16;
-  float regularization = 0.5;
-  vl_size minRegionSize = (vl_size)5;
-  vl_slic_segment(segmentation, image, width, height, numChannels, regionSize, regularization, minRegionSize);
-  destroy_img(img);
-  destroy_seg(seg);
+
+  // The algorithm will store the final segmentation in a one-dimensional array.
+  vl_uint32* segmentation = new vl_uint32[mat.rows*mat.cols];
+  vl_size height = mat.rows;
+  vl_size width = mat.cols;
+  vl_size channels = mat.channels();
+
+  // The region size defines the number of superpixels obtained.
+  // Regularization describes a trade-off between the color term and the
+  // spatial term.
+  vl_size region = 30;
+  float regularization = 1000.;
+  vl_size minRegion = 10;
+
+  vl_slic_segment(segmentation, image, width, height, channels, region, regularization, minRegion);
+
+  // Convert segmentation.
+  int** labels = new int*[mat.rows];
+  for (int i = 0; i < mat.rows; ++i) {
+      labels[i] = new int[mat.cols];
+
+      for (int j = 0; j < mat.cols; ++j) {
+          labels[i][j] = (int) segmentation[j + mat.cols*i];
+      }
+  }
+
+  int label = 0;
+  int labelTop = -1;
+  int labelBottom = -1;
+  int labelLeft = -1;
+  int labelRight = -1;
+
+  for (int i = 0; i < mat.rows; i++) {
+      for (int j = 0; j < mat.cols; j++) {
+
+          label = labels[i][j];
+
+          labelTop = label;
+          if (i > 0) {
+              labelTop = labels[i - 1][j];
+          }
+
+          labelBottom = label;
+          if (i < mat.rows - 1) {
+              labelBottom = labels[i + 1][j];
+          }
+
+          labelLeft = label;
+          if (j > 0) {
+              labelLeft = labels[i][j - 1];
+          }
+
+          labelRight = label;
+          if (j < mat.cols - 1) {
+              labelRight = labels[i][j + 1];
+          }
+
+          if (label != labelTop || label != labelBottom || label!= labelLeft || label != labelRight) {
+              mat.at<cv::Vec3b>(i, j)[0] = 0;
+              mat.at<cv::Vec3b>(i, j)[1] = 0;
+              mat.at<cv::Vec3b>(i, j)[2] = 255;
+          }
+      }
+  }
+
+  cv::imwrite("contours.png", mat);
+
   return 0;
 }
 
