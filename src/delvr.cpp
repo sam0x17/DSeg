@@ -6,6 +6,7 @@
 #include <limits>
 #include <opencv2/opencv.hpp>
 #include <boost/multi_array.hpp>
+#include <math.h>
 
 extern "C" {
   #include <vl/generic.h>
@@ -14,12 +15,39 @@ extern "C" {
 
 const int DSEG_LINE_LENGTH = 24;
 
+inline float sq(float n) {
+  return n * n;
+}
+
+float dist3d(float x1, float y1, float z1, float x2, float y2, float z2) {
+  return sqrt(sq(x1 - x2) + sq(y1 - y2) + sq(z1 - z2));
+}
+
+void fill_magic_pink(cv::Mat &mat) {
+  for(int x = 0; x < mat.cols; x++) {
+    for(int y = 0; y < mat.rows; y++) {
+      if(mat.at<cv::Vec3b>(x, y)[0] == 0 &&
+         mat.at<cv::Vec3b>(x, y)[1] == 0 &&
+         mat.at<cv::Vec3b>(x, y)[2] == 0)
+      {
+        mat.at<cv::Vec3b>(x, y)[0] = 255;
+        mat.at<cv::Vec3b>(x, y)[1] = 0;
+        mat.at<cv::Vec3b>(x, y)[2] = 255;
+      }
+    }
+  }
+}
+
 class DColor {
   public:
     unsigned char r;
     unsigned char g;
     unsigned char b;
 };
+
+inline bool is_magic_pink(DColor color) {
+  return color.r == 255 && color.g == 0 && color.b == 255;
+}
 
 class DPos {
   public:
@@ -30,14 +58,24 @@ class DPos {
 class BSegment {
   public:
     int id;
-    std::vector<DPos> positions;
     int r_sum = 0;
     int g_sum = 0;
     int b_sum = 0;
     int x_sum = 0;
     int y_sum = 0;
+    DPos center_pos;
+    DColor main_color;
+    DColor avg_color;
+    std::vector<DPos> positions;
+    std::vector<DColor> colors;
 
     void add_pixel(int x, int y, int r, int g, int b) {
+      DColor color;
+      color.r = r;
+      color.g = g;
+      color.b = b;
+      if (is_magic_pink(color))
+        return;
       DPos pos;
       pos.x = x;
       pos.y = y;
@@ -47,6 +85,27 @@ class BSegment {
       b_sum += b;
       x_sum += x;
       y_sum += y;
+      colors.push_back(color);
+    }
+
+    void compute_averages() {
+      if (positions.size() == 0)
+        return;
+      // calculate center_pos
+      center_pos.x = x_sum / positions.size();
+      center_pos.y = y_sum / positions.size();
+      // find color closest to average color
+      avg_color.r = r_sum / positions.size();
+      avg_color.g = g_sum / positions.size();
+      avg_color.b = b_sum / positions.size();
+      float closest_dist = std::numeric_limits<float>::max();
+      for(DColor color : colors) {
+        float dist = dist3d(color.r, color.g, color.b, avg_color.r, avg_color.g, avg_color.b);
+        if (dist < closest_dist) {
+          closest_dist = dist;
+          main_color = color;
+        }
+      }
     }
 };
 
@@ -160,6 +219,10 @@ DSegment generate_dseg(BSegment bseg, int num=0) {
   DSegment dseg;
   if (bseg.positions.size() == 0)
     return dseg;
+  DColor main_color = bseg.main_color;
+  DColor avg_color = bseg.avg_color;
+  std::cout << "main color: " << (int)main_color.r << ", " << (int)main_color.g << ", " << (int)main_color.b << std::endl;
+  std::cout << " avg color: " << (int)avg_color.r << ", " << (int)avg_color.g << ", " << (int)avg_color.b << std::endl;
   int min_x = std::numeric_limits<int>::max();
   int min_y = min_x;
   int max_x = std::numeric_limits<int>::min();
@@ -192,13 +255,18 @@ DSegment generate_dseg(BSegment bseg, int num=0) {
 std::vector<DSegment> generate_dsegs(std::unordered_map<int, BSegment> bmap, int num=0) {
   std::vector<DSegment> dsegs;
   for(auto pair : bmap) {
-    generate_dseg(pair.second, num);
+    pair.second.compute_averages();
+    DColor main_color = pair.second.main_color;
+    if (!is_magic_pink(main_color) && pair.second.positions.size() > 0) {
+      generate_dseg(pair.second, num);
+    }
   }
   return dsegs;
 }
 
 int main(int argc, char** argv) {
   cv::Mat mat = cv::imread("0000444.png", CV_LOAD_IMAGE_COLOR);
+  fill_magic_pink(mat);
   //cv::Mat mat = cv::imread("../carrier.jpg", CV_LOAD_IMAGE_COLOR);
   std::cout << "loaded image" << std::endl;
   for(int scale = 1; scale <= 130;) {
