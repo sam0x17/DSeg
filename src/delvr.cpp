@@ -2,6 +2,7 @@
 #include <string>
 #include <vector>
 #include <unordered_map>
+#include <algorithm>
 #include <limits>
 #include <opencv2/opencv.hpp>
 #include <boost/multi_array.hpp>
@@ -153,6 +154,15 @@ inline int min(int a, int b) {
   return b;
 }
 
+int pixel_state(bool *grid, int w, int x, int y) {
+  int ret = 0;
+  if (grid[(x - 1) + w * (y - 1)]) ret |= 1;
+  if (grid[x + w * (y - 1)]) ret |= 2;
+  if (grid[(x - 1) + w * y]) ret |= 4;
+  if (grid[x + w * y]) ret |= 8;
+  return ret;
+}
+
 DSegment generate_dseg(BSegment bseg) {
   int min_x = std::numeric_limits<int>::max();
   int min_y = min_x;
@@ -164,23 +174,42 @@ DSegment generate_dseg(BSegment bseg) {
     max_x = max(max_x, pos.x);
     max_y = max(max_y, pos.y);
   }
-  int grid_w = 2 + max_x - min_x;
-  int grid_h = 2 + max_y - min_y;
-
-  bool *grid = new bool[grid_w * grid_h];
-  for(int i = 0; i < grid_w * grid_h; i++)
+  int w = 2 + max_x - min_x;
+  int h = 2 + max_y - min_y;
+  bool *grid = new bool[w * h];
+  for(int i = 0; i < w * h; i++)
     grid[i] = false;
   for(DPos pos : bseg.positions) {
-    int x = pos.x - min_x;
-    int y = pos.y - min_y;
-    grid[grid_w * y + x] = true;
+    int x = pos.x - min_x + 1;
+    int y = pos.y - min_y + 1;
+    grid[w * y + x] = true;
   }
-  for(int x = 1; x < grid_w - 1; x++) {
-    for(int y = 1; y < grid_h - 1; y++) {
-
+  // boundary finding algorithm adapted from http://chaosinmotion.com/blog/?p=893
+  DPos start;
+  start.x = -1;
+  start.y = -1;
+  bool found = false;
+  for (int x = 0; x < w && !found; x++) {
+    for (int y = 0; y < h && !found; y++) {
+      if (grid[w * y + x]) {
+        start.x = x;
+        start.y = y;
+        found = true;
+      }
     }
   }
   DSegment dseg;
+  if (!found)
+    return dseg;
+  DPos cur;
+  cur.x = start.x;
+  cur.y = start.y;
+
+  do {
+    switch(pixel_state(grid, w, x, y)) {
+      case 0:
+    }
+  } while (cur.x != start.x && cur.y != start.y)
   return dseg;
 }
 
@@ -201,7 +230,7 @@ int main(int argc, char** argv) {
     std::stringstream ss;
     ss << "contours_" << scale << ".png";
     std::cout << ss.str() << std::endl;
-    cv::imwrite(ss.str(), res.segmented_image);
+    //cv::imwrite(ss.str(), res.segmented_image);
     generate_dsegs(res.bmap);
     if (scale < 40)
       scale++;
