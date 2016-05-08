@@ -29,6 +29,7 @@ class DPos {
 
 class BSegment {
   public:
+    int id;
     std::vector<DPos> positions;
     int r_sum = 0;
     int g_sum = 0;
@@ -126,6 +127,7 @@ DSegmentationResult perform_segmentation(cv::Mat mat, int region, int min_region
       if (iter == bmap.end()) {
         BSegment bseg;
         bseg.add_pixel(i, j, r, g, b);
+        bseg.id = label;
         bmap[label] = bseg;
       } else {
         BSegment *bseg = &bmap[label];
@@ -137,8 +139,8 @@ DSegmentationResult perform_segmentation(cv::Mat mat, int region, int min_region
   res.bmap = bmap;
   if (return_image)
     res.segmented_image = matc;
-  delete image;
-  delete segmentation;
+  delete[] image;
+  delete[] segmentation;
   return res;
 }
 
@@ -154,16 +156,10 @@ inline int min(int a, int b) {
   return b;
 }
 
-int pixel_state(bool *grid, int w, int x, int y) {
-  int ret = 0;
-  if (grid[(x - 1) + w * (y - 1)]) ret |= 1;
-  if (grid[x + w * (y - 1)]) ret |= 2;
-  if (grid[(x - 1) + w * y]) ret |= 4;
-  if (grid[x + w * y]) ret |= 8;
-  return ret;
-}
-
-DSegment generate_dseg(BSegment bseg) {
+DSegment generate_dseg(BSegment bseg, int num=0) {
+  DSegment dseg;
+  if (bseg.positions.size() == 0)
+    return dseg;
   int min_x = std::numeric_limits<int>::max();
   int min_y = min_x;
   int max_x = std::numeric_limits<int>::min();
@@ -174,49 +170,29 @@ DSegment generate_dseg(BSegment bseg) {
     max_x = max(max_x, pos.x);
     max_y = max(max_y, pos.y);
   }
-  int w = 2 + max_x - min_x;
-  int h = 2 + max_y - min_y;
-  bool *grid = new bool[w * h];
-  for(int i = 0; i < w * h; i++)
-    grid[i] = false;
+  int w = max_x - min_x + 1;
+  int h = max_y - min_y + 1;
+  cv::Mat patch = cv::Mat(w, h, cv::DataType<float>::type);
+  for(int x = 0; x < w; x++)
+    for(int y = 0; y < h; y++)
+      patch.at<float>(x, y) = 0.0;
+  std::cout << "w: " << w << "  h: " << h << std::endl;
   for(DPos pos : bseg.positions) {
-    int x = pos.x - min_x + 1;
-    int y = pos.y - min_y + 1;
-    grid[w * y + x] = true;
+    int x = pos.x - min_x;
+    int y = pos.y - min_y;
+    patch.at<float>(x, y) = 255.0;
   }
-  // boundary finding algorithm adapted from http://chaosinmotion.com/blog/?p=893
-  DPos start;
-  start.x = -1;
-  start.y = -1;
-  bool found = false;
-  for (int x = 0; x < w && !found; x++) {
-    for (int y = 0; y < h && !found; y++) {
-      if (grid[w * y + x]) {
-        start.x = x;
-        start.y = y;
-        found = true;
-      }
-    }
-  }
-  DSegment dseg;
-  if (!found)
-    return dseg;
-  DPos cur;
-  cur.x = start.x;
-  cur.y = start.y;
-
-  do {
-    switch(pixel_state(grid, w, x, y)) {
-      case 0:
-    }
-  } while (cur.x != start.x && cur.y != start.y)
+  std::stringstream ss;
+  ss << "patch_" << num << "_" << bseg.id << ".png";
+  cv::imwrite(ss.str(), patch);
+  std::cout << ss.str() << std::endl;
   return dseg;
 }
 
-std::vector<DSegment> generate_dsegs(std::unordered_map<int, BSegment> bmap) {
+std::vector<DSegment> generate_dsegs(std::unordered_map<int, BSegment> bmap, int num=0) {
   std::vector<DSegment> dsegs;
   for(auto pair : bmap) {
-    generate_dseg(pair.second);
+    generate_dseg(pair.second, num);
   }
   return dsegs;
 }
@@ -226,12 +202,12 @@ int main(int argc, char** argv) {
   //cv::Mat mat = cv::imread("../carrier.jpg", CV_LOAD_IMAGE_COLOR);
   std::cout << "loaded image" << std::endl;
   for(int scale = 1; scale <= 130;) {
-    DSegmentationResult res = perform_segmentation(mat, 4 + scale, (4 + scale) * 0.25, 1500.0, false);
+    DSegmentationResult res = perform_segmentation(mat, 4 + scale, (4 + scale) * 0.25, 1500.0, true);
     std::stringstream ss;
     ss << "contours_" << scale << ".png";
     std::cout << ss.str() << std::endl;
-    //cv::imwrite(ss.str(), res.segmented_image);
-    generate_dsegs(res.bmap);
+    cv::imwrite(ss.str(), res.segmented_image);
+    generate_dsegs(res.bmap, scale);
     if (scale < 40)
       scale++;
     else if (scale < 60)
