@@ -10,7 +10,9 @@ extern "C" {
 
 int main(int argc, char** argv) {
   // loading routine based on https://github.com/davidstutz/vlfeat-slic-example
+  //cv::Mat mat = cv::imread("0000444.png", CV_LOAD_IMAGE_COLOR);
   cv::Mat mat = cv::imread("../carrier.jpg", CV_LOAD_IMAGE_COLOR);
+  std::cout << "loaded image" << std::endl;
 
   // convert to 1 dimensional
   float* image = new float[mat.rows*mat.cols*mat.channels()];
@@ -34,10 +36,10 @@ int main(int argc, char** argv) {
   // The region size defines the number of superpixels obtained.
   // Regularization describes a trade-off between the color term and the
   // spatial term.
-  vl_size region = 30;
-  float regularization = 1000.;
+  vl_size region = 20;
+  float regularization = 1500.0;
   vl_size minRegion = 10;
-
+  std::cout << "performing segmentation" << std::endl;
   vl_slic_segment(segmentation, image, width, height, channels, region, regularization, minRegion);
 
   // Convert segmentation.
@@ -81,7 +83,7 @@ int main(int argc, char** argv) {
               labelRight = labels[i][j + 1];
           }
 
-          if (label != labelTop || label != labelBottom || label!= labelLeft || label != labelRight) {
+          if (label != labelTop || label != labelBottom || label != labelLeft || label != labelRight) {
               mat.at<cv::Vec3b>(i, j)[0] = 0;
               mat.at<cv::Vec3b>(i, j)[1] = 0;
               mat.at<cv::Vec3b>(i, j)[2] = 255;
