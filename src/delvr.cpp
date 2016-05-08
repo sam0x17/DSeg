@@ -2,6 +2,7 @@
 #include <string>
 #include <vector>
 #include <unordered_map>
+#include <limits>
 #include <opencv2/opencv.hpp>
 #include <boost/multi_array.hpp>
 
@@ -9,6 +10,8 @@ extern "C" {
   #include <vl/generic.h>
   #include <vl/slic.h>
 }
+
+const int DSEG_LINE_LENGTH = 24;
 
 class DColor {
   public:
@@ -48,7 +51,7 @@ class BSegment {
 class DSegment {
   public:
     DColor cta_color; // closest color to average
-    float line[24]; // 1D representation of outline, slope based
+    float line[DSEG_LINE_LENGTH]; // 1D representation of outline, slope based
 };
 
 class DSegmentationResult {
@@ -71,8 +74,8 @@ DSegmentationResult perform_segmentation(cv::Mat mat, int region, int min_region
   vl_size channels = mat.channels();
   // convert to 1 dimensional array of floats
   float* image = new float[mat.rows * mat.cols * mat.channels()];
-  for (int i = 0; i < mat.rows; ++i) {
-    for (int j = 0; j < mat.cols; ++j) {
+  for(int i = 0; i < mat.rows; ++i) {
+    for(int j = 0; j < mat.cols; ++j) {
       // Assuming three channels ...
       image[j + mat.cols * i + mat.cols * mat.rows * 0] = mat.at<cv::Vec3b>(i, j)[0];
       image[j + mat.cols * i + mat.cols * mat.rows * 1] = mat.at<cv::Vec3b>(i, j)[1];
@@ -91,9 +94,9 @@ DSegmentationResult perform_segmentation(cv::Mat mat, int region, int min_region
   int label_right = -1;
 
   // record segmentation result
-  for (int i = 0; i < matc.rows; i++) {
-    for (int j = 0; j < matc.cols; j++) {
-      label = seg_at(segmentation, i, j, matc.cols);
+  for(int i = 0; i < mat.rows; i++) {
+    for(int j = 0; j < mat.cols; j++) {
+      label = seg_at(segmentation, i, j, mat.cols);
 
       if (return_image) {
         label_top = label;
@@ -133,7 +136,60 @@ DSegmentationResult perform_segmentation(cv::Mat mat, int region, int min_region
   res.bmap = bmap;
   if (return_image)
     res.segmented_image = matc;
+  delete image;
+  delete segmentation;
   return res;
+}
+
+inline int max(int a, int b) {
+  if (a >= b)
+    return a;
+  return b;
+}
+
+inline int min(int a, int b) {
+  if (a <= b)
+    return a;
+  return b;
+}
+
+DSegment generate_dseg(BSegment bseg) {
+  int min_x = std::numeric_limits<int>::max();
+  int min_y = min_x;
+  int max_x = std::numeric_limits<int>::min();
+  int max_y = max_x;
+  for(DPos pos : bseg.positions) {
+    min_x = min(min_x, pos.x);
+    min_y = min(min_y, pos.y);
+    max_x = max(max_x, pos.x);
+    max_y = max(max_y, pos.y);
+  }
+  int grid_w = 2 + max_x - min_x;
+  int grid_h = 2 + max_y - min_y;
+
+  bool *grid = new bool[grid_w * grid_h];
+  for(int i = 0; i < grid_w * grid_h; i++)
+    grid[i] = false;
+  for(DPos pos : bseg.positions) {
+    int x = pos.x - min_x;
+    int y = pos.y - min_y;
+    grid[grid_w * y + x] = true;
+  }
+  for(int x = 1; x < grid_w - 1; x++) {
+    for(int y = 1; y < grid_h - 1; y++) {
+
+    }
+  }
+  DSegment dseg;
+  return dseg;
+}
+
+std::vector<DSegment> generate_dsegs(std::unordered_map<int, BSegment> bmap) {
+  std::vector<DSegment> dsegs;
+  for(auto pair : bmap) {
+    generate_dseg(pair.second);
+  }
+  return dsegs;
 }
 
 int main(int argc, char** argv) {
@@ -142,10 +198,11 @@ int main(int argc, char** argv) {
   std::cout << "loaded image" << std::endl;
   for(int scale = 1; scale <= 130;) {
     DSegmentationResult res = perform_segmentation(mat, 4 + scale, (4 + scale) * 0.25, 1500.0, false);
-    /*std::stringstream ss;
+    std::stringstream ss;
     ss << "contours_" << scale << ".png";
     std::cout << ss.str() << std::endl;
-    cv::imwrite(ss.str(), res.segmented_image);*/
+    cv::imwrite(ss.str(), res.segmented_image);
+    generate_dsegs(res.bmap);
     if (scale < 40)
       scale++;
     else if (scale < 60)
