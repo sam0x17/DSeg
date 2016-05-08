@@ -17,9 +17,11 @@ int main(int argc, char** argv) {
   for (int i = 0; i < mat.rows; ++i) {
       for (int j = 0; j < mat.cols; ++j) {
           // Assuming three channels ...
-          image[j + mat.cols*i + mat.cols*mat.rows*0] = mat.at<cv::Vec3b>(i, j)[0];
-          image[j + mat.cols*i + mat.cols*mat.rows*1] = mat.at<cv::Vec3b>(i, j)[1];
-          image[j + mat.cols*i + mat.cols*mat.rows*2] = mat.at<cv::Vec3b>(i, j)[2];
+          image[j + mat.cols * i + mat.cols * mat.rows * 0] = mat.at<cv::Vec3b>(i, j)[0];
+          image[j + mat.cols * i + mat.cols * mat.rows * 1] = mat.at<cv::Vec3b>(i, j)[1];
+          image[j + mat.cols * i + mat.cols * mat.rows * 2] = mat.at<cv::Vec3b>(i, j)[2];
+          if(mat.channels() == 4)
+          image[j + mat.cols * i + mat.cols * mat.rows * 3] = mat.at<cv::Vec3b>(i, j)[3];
       }
   }
 
