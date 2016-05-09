@@ -168,6 +168,31 @@ DFeatVect make_feature_vector(DSegment dseg) {
   return feat;
 }
 
+class DFeatFile {
+  public:
+    std::vector<char> buffer;
+    long num_features;
+    long file_size;
+    bool positive; // whether these are positive or negative examples
+
+    void load(std::string file_path, bool ispositive) {
+      positive = ispositive;
+      std::cout << "loading " << file_path << "..." << std::endl;
+      std::ifstream file(file_path, std::ios::binary | std::ios::ate);
+      std::streamsize size = file.tellg();
+      file_size = size;
+      num_features = size / sizeof(char) / (3 + sq(DSEG_GRID_SIZE));
+      std::cout << "loading " << size << " bytes into memory..." << std::endl;
+      file.seekg(0, std::ios::beg);
+      buffer.reserve(size);
+      if (!file.read(buffer.data(), size)) {
+        std::cout << "could not read file " << file_path << std::endl;
+        exit(1);
+      }
+      std::cout << "done loading" << std::endl;
+    }
+};
+
 class DSegmentationResult {
   public:
     std::unordered_map<int, BSegment> bmap;
@@ -447,9 +472,12 @@ int main(int argc, char** argv) {
   std::cout << std::endl;
   if (argc == 1) {
     std::cout << "usage: delvr genfeats [translucent|opaque] [path/to/images] [path/to/outfile]" << std::endl;
+    std::cout << "       delvr traindetector [path/to/positive/features] [path/to/negative/features] [output/path]" << std::endl;
     return 0;
   }
   unsigned num_threads = std::thread::hardware_concurrency();
+
+  // BEGIN GENFEATS
   if (std::string(argv[1]) == "genfeats") {
     if (argc != 5) {
       std::cout << "wrong number of arguments!" << std::endl;
@@ -498,6 +526,19 @@ int main(int argc, char** argv) {
     out_file.close();
     std::cout << "done." << std::endl;
     return 0;
+
+  // BEGIN TRAIN DETECTOR
+  } else if(std::string(argv[1]) == "traindetector") {
+    if (argc != 5) {
+      std::cout << "error: wrong number of arguments!" << std::endl;
+      exit(1);
+    }
+    std::string positive_features_path = std::string(argv[2]);
+    std::string negative_features_path = std::string(argv[3]);
+    std::string output_path = std::string(argv[4]);
+    DFeatFile positives;
+    positives.load(positive_features_path, true);
+    std::cout << "done" << std::endl;
   }
   return 0;
 }
