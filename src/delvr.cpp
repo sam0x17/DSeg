@@ -145,18 +145,18 @@ class DSegment {
 
 class DFeatVect {
   public:
-    float data[DSEG_GRID_SIZE * DSEG_GRID_SIZE + 3];
+    unsigned char data[DSEG_GRID_SIZE * DSEG_GRID_SIZE + 3];
 
     void set_color(DColor color) {
-      data[DSEG_GRID_SIZE * DSEG_GRID_SIZE + 1] = (float)color.r / 255.0;
-      data[DSEG_GRID_SIZE * DSEG_GRID_SIZE + 2] = (float)color.g / 255.0;
-      data[DSEG_GRID_SIZE * DSEG_GRID_SIZE + 3] = (float)color.g / 255.0;
+      data[DSEG_GRID_SIZE * DSEG_GRID_SIZE + 1] = color.r;
+      data[DSEG_GRID_SIZE * DSEG_GRID_SIZE + 2] = color.g;
+      data[DSEG_GRID_SIZE * DSEG_GRID_SIZE + 3] = color.b;
     }
 
     void set_grid(cv::Mat &mat) {
       for(int x = 0; x < DSEG_GRID_SIZE; x++)
         for(int y = 0; y < DSEG_GRID_SIZE; y++)
-          data[y * DSEG_GRID_SIZE + x] = 1.0 - mat.at<unsigned char>(x, y) / 255.0;
+          data[y * DSEG_GRID_SIZE + x] = 255 - mat.at<unsigned char>(x, y);
     }
 };
 
@@ -427,7 +427,7 @@ void genfeats_multithreaded(int thread_num, std::vector<std::string> img_paths, 
     thread_print(thread_num, "processing " + path);
     cv::Mat mat = cv::imread(path, CV_LOAD_IMAGE_COLOR);
     std::vector<DFeatVect> feats = frame_to_feature_vectors(mat, translucent, false);
-    std::cout << "feats: " << feats.size() << std::endl;
+
   }
 }
 
