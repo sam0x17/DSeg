@@ -28,6 +28,10 @@ inline float sq(float n) {
   return n * n;
 }
 
+inline int sq(int n) {
+  return n * n;
+}
+
 float dist3d(float x1, float y1, float z1, float x2, float y2, float z2) {
   return sqrt(sq(x1 - x2) + sq(y1 - y2) + sq(z1 - z2));
 }
@@ -97,7 +101,7 @@ class BSegment {
     std::vector<DPos> positions;
     std::vector<DColor> colors;
 
-    void add_pixel(int x, int y, int r, int g, int b) {
+    void add_pixel(int x, int y, unsigned char r, unsigned char g, unsigned char b) {
       DColor color;
       color.r = r;
       color.g = g;
@@ -108,9 +112,9 @@ class BSegment {
       pos.x = x;
       pos.y = y;
       positions.push_back(pos);
-      r_sum += r;
-      g_sum += g;
-      b_sum += b;
+      r_sum += (int)r;
+      g_sum += (int)g;
+      b_sum += (int)b;
       x_sum += x;
       y_sum += y;
       colors.push_back(color);
@@ -123,9 +127,9 @@ class BSegment {
       center_pos.x = x_sum / positions.size();
       center_pos.y = y_sum / positions.size();
       // find color closest to average color
-      avg_color.r = r_sum / positions.size();
-      avg_color.g = g_sum / positions.size();
-      avg_color.b = b_sum / positions.size();
+      avg_color.r = (unsigned char)(r_sum / positions.size());
+      avg_color.g = (unsigned char)(g_sum / positions.size());
+      avg_color.b = (unsigned char)(b_sum / positions.size());
       float closest_dist = std::numeric_limits<float>::max();
       for(DColor color : colors) {
         float dist = dist3d(color.r, color.g, color.b, avg_color.r, avg_color.g, avg_color.b);
@@ -149,9 +153,9 @@ class DFeatVect {
     char data[DSEG_GRID_SIZE * DSEG_GRID_SIZE + 3];
 
     void set_color(DColor color) {
-      data[DSEG_GRID_SIZE * DSEG_GRID_SIZE + 1] = color.r;
-      data[DSEG_GRID_SIZE * DSEG_GRID_SIZE + 2] = color.g;
-      data[DSEG_GRID_SIZE * DSEG_GRID_SIZE + 3] = color.b;
+      data[DSEG_GRID_SIZE * DSEG_GRID_SIZE + 1] = (char)color.r;
+      data[DSEG_GRID_SIZE * DSEG_GRID_SIZE + 2] = (char)color.g;
+      data[DSEG_GRID_SIZE * DSEG_GRID_SIZE + 3] = (char)color.b;
     }
 
     void set_grid(cv::Mat &mat) {
@@ -190,6 +194,10 @@ class DFeatFile {
         exit(1);
       }
       std::cout << "done loading" << std::endl;
+    }
+
+    unsigned char *block(int index) {
+      return (unsigned char *)(buffer.data() + (3 + sq(DSEG_GRID_SIZE)) * index);
     }
 };
 
@@ -317,9 +325,9 @@ DSegmentationResult perform_segmentation(cv::Mat mat, int region, int min_region
         }
       }
       // create bsegs
-      int b = mat.at<cv::Vec3b>(i, j)[0];
-      int g = mat.at<cv::Vec3b>(i, j)[1];
-      int r = mat.at<cv::Vec3b>(i, j)[2];
+      unsigned char b = (unsigned char)mat.at<cv::Vec3b>(i, j)[0];
+      unsigned char g = (unsigned char)mat.at<cv::Vec3b>(i, j)[1];
+      unsigned char r = (unsigned char)mat.at<cv::Vec3b>(i, j)[2];
       std::unordered_map<int, BSegment>::iterator iter = bmap.find(label);
       if (iter == bmap.end()) {
         BSegment bseg;
@@ -345,10 +353,7 @@ DSegment generate_dseg(BSegment bseg, int num=0) {
   DSegment dseg;
   if (bseg.positions.size() == 0)
     return dseg;
-  DColor main_color = bseg.main_color;
-  DColor avg_color = bseg.avg_color;
-  //std::cout << "main color: " << (int)main_color.r << ", " << (int)main_color.g << ", " << (int)main_color.b << std::endl;
-  //std::cout << " avg color: " << (int)avg_color.r << ", " << (int)avg_color.g << ", " << (int)avg_color.b << std::endl;
+  dseg.cta_color = bseg.main_color;
   int min_x = std::numeric_limits<int>::max();
   int min_y = min_x;
   int max_x = std::numeric_limits<int>::min();
@@ -365,7 +370,6 @@ DSegment generate_dseg(BSegment bseg, int num=0) {
   for(int x = 0; x < w; x++)
     for(int y = 0; y < h; y++)
       patch.at<unsigned char>(x, y) = 255;
-  //std::cout << "w: " << w << "  h: " << h << std::endl;
   for(DPos pos : bseg.positions) {
     int x = pos.x - min_x;
     int y = pos.y - min_y;
@@ -374,7 +378,6 @@ DSegment generate_dseg(BSegment bseg, int num=0) {
   std::stringstream ss;
   ss << "patch_" << num << "_" << bseg.id << ".png";
   //cv::imwrite(ss.str(), patch);
-  //std::cout << ss.str() << std::endl;
   //dseg.patch_orig = patch;
   dseg.patch_resized = resize_contour(patch, DSEG_GRID_SIZE, DSEG_GRID_SIZE);
   //dseg.patch_resized = cv::Mat(DSEG_GRID_SIZE, DSEG_GRID_SIZE, cv::DataType<unsigned char>::type);
@@ -400,7 +403,7 @@ std::vector<DFeatVect> frame_to_feature_vectors(cv::Mat &mat, bool translucent=t
     fill_magic_pink(mat);
   std::vector<DSegment> all_dsegs;
   for(int scale = 1; scale <= 60;) {
-    DSegmentationResult res = perform_segmentation(mat, 4 + scale, (4 + scale) * DSEG_REGION_RATIO, DSEG_REGULARIZATION, true);
+    DSegmentationResult res = perform_segmentation(mat, 4 + scale, (4 + scale) * DSEG_REGION_RATIO, DSEG_REGULARIZATION, false);
     if (output_images) {
       std::stringstream ss;
       ss << "contours_" << scale << ".png";
@@ -539,6 +542,12 @@ int main(int argc, char** argv) {
     DFeatFile positives;
     positives.load(positive_features_path, true);
     std::cout << "done" << std::endl;
+    for(int block_num = 0; block_num < 10000; block_num++) {
+      unsigned char *block = positives.block(block_num);
+      for(int i = 0; i < sq(DSEG_GRID_SIZE) + 10; i++)
+        std::cout << (int)(block[i]) << std::endl;;
+      std::cout << std::endl;
+    }
   }
   return 0;
 }
