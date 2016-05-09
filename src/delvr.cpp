@@ -14,6 +14,9 @@ extern "C" {
 }
 
 const int DSEG_GRID_SIZE = 24;
+const int DSEG_POINTS_THRESHOLD = 5;
+const float DSEG_REGION_RATIO = 0.25;
+const float DSEG_REGULARIZATION = 4000.0;
 
 inline float sq(float n) {
   return n * n;
@@ -354,25 +357,25 @@ std::vector<DSegment> generate_dsegs(std::unordered_map<int, BSegment> bmap, int
   for(auto pair : bmap) {
     pair.second.compute_averages();
     DColor main_color = pair.second.main_color;
-    if (!is_magic_pink(main_color) && pair.second.positions.size() > 10) {
+    if (!is_magic_pink(main_color) && pair.second.positions.size() > DSEG_POINTS_THRESHOLD) {
       dsegs.push_back(generate_dseg(pair.second, num));
     }
   }
   return dsegs;
 }
 
-int main(int argc, char** argv) {
-  cv::Mat mat = cv::imread("0000444.png", CV_LOAD_IMAGE_COLOR);
-  //cv::Mat mat = cv::imread("../carrier.jpg", CV_LOAD_IMAGE_COLOR);
-  fill_magic_pink(mat);
-  std::cout << "loaded image" << std::endl;
+std::vector<DFeatVect> frame_to_feature_vectors(cv::Mat &mat, bool training=true, bool output_images=false) {
+  if (training)
+    fill_magic_pink(mat);
   std::vector<DSegment> all_dsegs;
   for(int scale = 1; scale <= 60;) {
-    DSegmentationResult res = perform_segmentation(mat, 4 + scale, (4 + scale) * 0.25, 5000.0, true);
-    std::stringstream ss;
-    ss << "contours_" << scale << ".png";
-    //std::cout << ss.str() << std::endl;
-    //cv::imwrite(ss.str(), res.segmented_image);
+    DSegmentationResult res = perform_segmentation(mat, 4 + scale, (4 + scale) * DSEG_REGION_RATIO, DSEG_REGULARIZATION, true);
+    if (output_images) {
+      std::stringstream ss;
+      ss << "contours_" << scale << ".png";
+      std::cout << ss.str() << std::endl;
+      cv::imwrite(ss.str(), res.segmented_image);
+    }
     std::vector<DSegment> dsegs = generate_dsegs(res.bmap, scale);
     all_dsegs.insert(all_dsegs.end(), dsegs.begin(), dsegs.end());
     if (scale < 10)
@@ -388,6 +391,15 @@ int main(int argc, char** argv) {
     else
       scale += 15;
   }
-  std::cout << "segments: " << all_dsegs.size() << std::endl;
+  std::vector<DFeatVect> feats;
+  for(DSegment dseg : all_dsegs)
+    feats.push_back(make_feature_vector(dseg));
+  return feats;
+}
+
+int main(int argc, char** argv) {
+  cv::Mat mat = cv::imread("0000444.png", CV_LOAD_IMAGE_COLOR);
+  std::vector<DFeatVect> feats = frame_to_feature_vectors(mat, true, false);
+  std::cout << "feats: " << feats.size() << std::endl;
   return 0;
 }
