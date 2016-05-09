@@ -13,7 +13,7 @@ extern "C" {
   #include <vl/slic.h>
 }
 
-const int DSEG_GRID_SIZE = 512;
+const int DSEG_GRID_SIZE = 24;
 
 inline float sq(float n) {
   return n * n;
@@ -135,6 +135,30 @@ class DSegment {
     cv::Mat patch_resized;
 };
 
+class DFeatVect {
+  public:
+    float data[DSEG_GRID_SIZE * DSEG_GRID_SIZE + 3];
+
+    void set_color(DColor color) {
+      data[DSEG_GRID_SIZE * DSEG_GRID_SIZE + 1] = (float)color.r / 255.0;
+      data[DSEG_GRID_SIZE * DSEG_GRID_SIZE + 2] = (float)color.g / 255.0;
+      data[DSEG_GRID_SIZE * DSEG_GRID_SIZE + 3] = (float)color.g / 255.0;
+    }
+
+    void set_grid(cv::Mat &mat) {
+      for(int x = 0; x < DSEG_GRID_SIZE; x++)
+        for(int y = 0; y < DSEG_GRID_SIZE; y++)
+          data[y * DSEG_GRID_SIZE + x] = 1.0 - mat.at<unsigned char>(x, y) / 255.0;
+    }
+};
+
+DFeatVect make_feature_vector(DSegment dseg) {
+  DFeatVect feat;
+  feat.set_grid(dseg.patch_resized);
+  feat.set_color(dseg.cta_color);
+  return feat;
+}
+
 class DSegmentationResult {
   public:
     std::unordered_map<int, BSegment> bmap;
@@ -158,7 +182,6 @@ inline bool in_bounds(int w, int h, int x, int y) {
 
 cv::Mat resize_contour(cv::Mat &src, int dest_width, int dest_height) {
   cv::Mat dest = cv::Mat(dest_width, dest_height, cv::DataType<unsigned char>::type);
-  //cv::Mat src = shift_image(sr);
   float xmod = ((float)dest_width) / (float)src.cols;
   float ymod = ((float)dest_height) / (float)src.rows;
   for(int x = 0; x < dest_width; x++)
@@ -192,11 +215,11 @@ cv::Mat resize_contour(cv::Mat &src, int dest_width, int dest_height) {
       if (border.size() > 1) {
         std::vector<std::vector<cv::Point>> polys;
         polys.push_back(pts);
-        cv::fillPoly(dest, polys, 120);
+        cv::fillPoly(dest, polys, 0);
       }
     }
   }
-
+  /*
   for(int x = 0; x < src.cols; x++) {
     for(int y = 0; y < src.rows; y++) {
       if (src.at<unsigned char>(x, y) == 0) {
@@ -205,7 +228,7 @@ cv::Mat resize_contour(cv::Mat &src, int dest_width, int dest_height) {
         cv::drawMarker(dest, cv::Point(proj.x, proj.y), 0);
       }
     }
-  }
+  }*/
   return dest;
 }
 
@@ -290,8 +313,8 @@ DSegment generate_dseg(BSegment bseg, int num=0) {
     return dseg;
   DColor main_color = bseg.main_color;
   DColor avg_color = bseg.avg_color;
-  std::cout << "main color: " << (int)main_color.r << ", " << (int)main_color.g << ", " << (int)main_color.b << std::endl;
-  std::cout << " avg color: " << (int)avg_color.r << ", " << (int)avg_color.g << ", " << (int)avg_color.b << std::endl;
+  //std::cout << "main color: " << (int)main_color.r << ", " << (int)main_color.g << ", " << (int)main_color.b << std::endl;
+  //std::cout << " avg color: " << (int)avg_color.r << ", " << (int)avg_color.g << ", " << (int)avg_color.b << std::endl;
   int min_x = std::numeric_limits<int>::max();
   int min_y = min_x;
   int max_x = std::numeric_limits<int>::min();
@@ -308,7 +331,7 @@ DSegment generate_dseg(BSegment bseg, int num=0) {
   for(int x = 0; x < w; x++)
     for(int y = 0; y < h; y++)
       patch.at<unsigned char>(x, y) = 255;
-  std::cout << "w: " << w << "  h: " << h << std::endl;
+  //std::cout << "w: " << w << "  h: " << h << std::endl;
   for(DPos pos : bseg.positions) {
     int x = pos.x - min_x;
     int y = pos.y - min_y;
@@ -317,12 +340,12 @@ DSegment generate_dseg(BSegment bseg, int num=0) {
   std::stringstream ss;
   ss << "patch_" << num << "_" << bseg.id << ".png";
   //cv::imwrite(ss.str(), patch);
-  std::cout << ss.str() << std::endl;
-  dseg.patch_orig = patch;
+  //std::cout << ss.str() << std::endl;
+  //dseg.patch_orig = patch;
   dseg.patch_resized = resize_contour(patch, DSEG_GRID_SIZE, DSEG_GRID_SIZE);
   //dseg.patch_resized = cv::Mat(DSEG_GRID_SIZE, DSEG_GRID_SIZE, cv::DataType<unsigned char>::type);
   //cv::resize(patch, dseg.patch_resized, dseg.patch_resized.size(), cv::INTER_AREA);
-  cv::imwrite(ss.str(), dseg.patch_resized);
+  //cv::imwrite(ss.str(), dseg.patch_resized);
   return dseg;
 }
 
@@ -331,8 +354,8 @@ std::vector<DSegment> generate_dsegs(std::unordered_map<int, BSegment> bmap, int
   for(auto pair : bmap) {
     pair.second.compute_averages();
     DColor main_color = pair.second.main_color;
-    if (!is_magic_pink(main_color) && pair.second.positions.size() > 0) {
-      generate_dseg(pair.second, num);
+    if (!is_magic_pink(main_color) && pair.second.positions.size() > 10) {
+      dsegs.push_back(generate_dseg(pair.second, num));
     }
   }
   return dsegs;
@@ -343,21 +366,28 @@ int main(int argc, char** argv) {
   //cv::Mat mat = cv::imread("../carrier.jpg", CV_LOAD_IMAGE_COLOR);
   fill_magic_pink(mat);
   std::cout << "loaded image" << std::endl;
-  for(int scale = 1; scale <= 85;) {
-    DSegmentationResult res = perform_segmentation(mat, 4 + scale, (4 + scale) * 0.25, 2500.0, true);
+  std::vector<DSegment> all_dsegs;
+  for(int scale = 1; scale <= 60;) {
+    DSegmentationResult res = perform_segmentation(mat, 4 + scale, (4 + scale) * 0.25, 5000.0, true);
     std::stringstream ss;
     ss << "contours_" << scale << ".png";
-    std::cout << ss.str() << std::endl;
-    cv::imwrite(ss.str(), res.segmented_image);
-    generate_dsegs(res.bmap, scale);
-    if (scale < 40)
-      scale++;
-    else if (scale < 60)
+    //std::cout << ss.str() << std::endl;
+    //cv::imwrite(ss.str(), res.segmented_image);
+    std::vector<DSegment> dsegs = generate_dsegs(res.bmap, scale);
+    all_dsegs.insert(all_dsegs.end(), dsegs.begin(), dsegs.end());
+    if (scale < 10)
+      scale += 1;
+    else if (scale < 20)
       scale += 2;
-    else if (scale < 100)
-      scale += 5;
-    else
+    else if (scale < 30)
+      scale += 4;
+    else if (scale < 40)
+      scale += 8;
+    else if (scale < 50)
       scale += 10;
+    else
+      scale += 15;
   }
+  std::cout << "segments: " << all_dsegs.size() << std::endl;
   return 0;
 }
