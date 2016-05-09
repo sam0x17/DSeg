@@ -21,6 +21,7 @@ extern "C" {
 
 const int DSEG_GRID_SIZE = 16;
 const int DSEG_POINTS_THRESHOLD = 8;
+const int DSEG_DATA_SIZE = DSEG_GRID_SIZE * DSEG_GRID_SIZE + 4;
 const float DSEG_REGION_RATIO = 0.25;
 const float DSEG_REGULARIZATION = 4000.0;
 
@@ -150,7 +151,7 @@ class DSegment {
 
 class DFeatVect {
   public:
-    char data[DSEG_GRID_SIZE * DSEG_GRID_SIZE + 3];
+    char data[DSEG_GRID_SIZE * DSEG_GRID_SIZE + 4];
 
     void set_color(DColor color) {
       data[DSEG_GRID_SIZE * DSEG_GRID_SIZE + 1] = (char)color.r;
@@ -185,7 +186,7 @@ class DFeatFile {
       std::ifstream file(file_path, std::ios::binary | std::ios::ate);
       std::streamsize size = file.tellg();
       file_size = size;
-      num_features = size / sizeof(char) / (3 + sq(DSEG_GRID_SIZE));
+      num_features = size / DSEG_DATA_SIZE;
       std::cout << "loading " << size << " bytes into memory..." << std::endl;
       file.seekg(0, std::ios::beg);
       buffer.reserve(size);
@@ -197,7 +198,7 @@ class DFeatFile {
     }
 
     unsigned char *block(int index) {
-      return (unsigned char *)(buffer.data() + (3 + sq(DSEG_GRID_SIZE)) * index);
+      return (unsigned char *)(buffer.data() + DSEG_DATA_SIZE * index);
     }
 };
 
@@ -542,10 +543,10 @@ int main(int argc, char** argv) {
     DFeatFile positives;
     positives.load(positive_features_path, true);
     std::cout << "done" << std::endl;
-    for(int block_num = 0; block_num < 10000; block_num++) {
+    for(int block_num = 0; block_num < positives.num_features; block_num++) {
       unsigned char *block = positives.block(block_num);
-      for(int i = 0; i < sq(DSEG_GRID_SIZE) + 10; i++)
-        std::cout << (int)(block[i]) << std::endl;;
+      for(int i = sq(DSEG_GRID_SIZE) + 1; i < sq(DSEG_GRID_SIZE) + 4; i++)
+        std::cout << (int)((unsigned char)(block[i])) << std::endl;;
       std::cout << std::endl;
     }
   }
