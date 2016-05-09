@@ -1,4 +1,5 @@
 #include <iostream>
+#include <fstream>
 #include <string>
 #include <vector>
 #include <unordered_map>
@@ -18,8 +19,8 @@ extern "C" {
   #include <vl/slic.h>
 }
 
-const int DSEG_GRID_SIZE = 24;
-const int DSEG_POINTS_THRESHOLD = 5;
+const int DSEG_GRID_SIZE = 16;
+const int DSEG_POINTS_THRESHOLD = 8;
 const float DSEG_REGION_RATIO = 0.25;
 const float DSEG_REGULARIZATION = 4000.0;
 
@@ -145,7 +146,7 @@ class DSegment {
 
 class DFeatVect {
   public:
-    unsigned char data[DSEG_GRID_SIZE * DSEG_GRID_SIZE + 3];
+    char data[DSEG_GRID_SIZE * DSEG_GRID_SIZE + 3];
 
     void set_color(DColor color) {
       data[DSEG_GRID_SIZE * DSEG_GRID_SIZE + 1] = color.r;
@@ -421,13 +422,23 @@ void thread_print(int thread_num, std::string msg) {
   print_mutex.unlock();
 }
 
+std::mutex file_mutex;
+std::ofstream out_file;
+
+std::mutex threads_up_mutex;
+
 void genfeats_multithreaded(int thread_num, std::vector<std::string> img_paths, std::string outfile, bool translucent) {
   thread_print(thread_num, "[ STARTED ]");
+  threads_up_mutex.lock();
   for(std::string path : img_paths) {
     thread_print(thread_num, "processing " + path);
     cv::Mat mat = cv::imread(path, CV_LOAD_IMAGE_COLOR);
     std::vector<DFeatVect> feats = frame_to_feature_vectors(mat, translucent, false);
-
+    file_mutex.lock();
+    for(DFeatVect feat : feats) {
+      out_file.write(feat.data, sizeof(feat.data));
+    }
+    file_mutex.unlock();
   }
 }
 
@@ -475,14 +486,21 @@ int main(int argc, char** argv) {
       if (j == num_threads - 1)
         j = -1;
     }
+    // set up io
+    out_file.open(outpath, std::ios::out | std::ios::app | std::ios::binary);
     // start threads
     for(int i = 0; i < num_threads; i++) {
       threads[i] = std::thread(genfeats_multithreaded, i, workload[i], outpath, translucent);
     }
+    for(int i = 0; i < num_threads; i++)
+      threads_up_mutex.unlock();
     for(int i = 0; i < num_threads; i++) {
       threads[i].join();
     }
     std::cout << "all threads finished" << std::endl;
+    std::cout << "finalizing output file..." << std::endl;
+    out_file.close();
+    std::cout << "done." << std::endl;
     return 0;
   }
   return 0;
