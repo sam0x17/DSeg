@@ -9,7 +9,7 @@
 #include <boost/multi_array.hpp>
 #include <boost/algorithm/string/predicate.hpp>
 #include <thread>
-#include <future>
+#include <chrono>
 #include <mutex>
 #include <math.h>
 #include <glob.h>
@@ -425,11 +425,9 @@ void thread_print(int thread_num, std::string msg) {
 std::mutex file_mutex;
 std::ofstream out_file;
 
-std::mutex threads_up_mutex;
-
 void genfeats_multithreaded(int thread_num, std::vector<std::string> img_paths, std::string outfile, bool translucent) {
   thread_print(thread_num, "[ STARTED ]");
-  threads_up_mutex.lock();
+  std::this_thread::sleep_for(std::chrono::milliseconds(1000));
   for(std::string path : img_paths) {
     thread_print(thread_num, "processing " + path);
     cv::Mat mat = cv::imread(path, CV_LOAD_IMAGE_COLOR);
@@ -492,8 +490,6 @@ int main(int argc, char** argv) {
     for(int i = 0; i < num_threads; i++) {
       threads[i] = std::thread(genfeats_multithreaded, i, workload[i], outpath, translucent);
     }
-    for(int i = 0; i < num_threads; i++)
-      threads_up_mutex.unlock();
     for(int i = 0; i < num_threads; i++) {
       threads[i].join();
     }
