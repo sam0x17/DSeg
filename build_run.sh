@@ -3,4 +3,4 @@
 cd bin
 #rm contours*
 #rm patch*
-time ./delvr
+./delvr genfeats translucent data/imgs/hamina\ 128x128\ m-30\ crop-t hamina.dfeats

@@ -6,7 +6,12 @@
 #include <limits>
 #include <opencv2/opencv.hpp>
 #include <boost/multi_array.hpp>
+#include <boost/algorithm/string/predicate.hpp>
+#include <thread>
+#include <future>
+#include <mutex>
 #include <math.h>
+#include <glob.h>
 
 extern "C" {
   #include <vl/generic.h>
@@ -364,8 +369,8 @@ std::vector<DSegment> generate_dsegs(std::unordered_map<int, BSegment> bmap, int
   return dsegs;
 }
 
-std::vector<DFeatVect> frame_to_feature_vectors(cv::Mat &mat, bool training=true, bool output_images=false) {
-  if (training)
+std::vector<DFeatVect> frame_to_feature_vectors(cv::Mat &mat, bool translucent=true, bool output_images=false) {
+  if (translucent)
     fill_magic_pink(mat);
   std::vector<DSegment> all_dsegs;
   for(int scale = 1; scale <= 60;) {
@@ -397,9 +402,88 @@ std::vector<DFeatVect> frame_to_feature_vectors(cv::Mat &mat, bool training=true
   return feats;
 }
 
+// adapted from http://stackoverflow.com/questions/612097/how-can-i-get-the-list-of-files-in-a-directory-using-c-or-c
+std::vector<std::string> match_files(const std::string &pattern) {
+  glob_t glob_result;
+  glob(pattern.c_str(), GLOB_TILDE, NULL, &glob_result);
+  std::vector<std::string> files;
+  for(unsigned int i = 0; i < glob_result.gl_pathc; ++i) {
+    files.push_back(std::string(glob_result.gl_pathv[i]));
+  }
+  globfree(&glob_result);
+  return files;
+}
+
+std::mutex print_mutex;
+void thread_print(int thread_num, std::string msg) {
+  print_mutex.lock();
+  std::cout << "#" << thread_num << ": " << msg << std::endl;
+  print_mutex.unlock();
+}
+
+void genfeats_multithreaded(int thread_num, std::vector<std::string> img_paths, std::string outfile, bool translucent) {
+  thread_print(thread_num, "[ STARTED ]");
+  for(std::string path : img_paths) {
+    thread_print(thread_num, "processing " + path);
+    cv::Mat mat = cv::imread(path, CV_LOAD_IMAGE_COLOR);
+    std::vector<DFeatVect> feats = frame_to_feature_vectors(mat, translucent, false);
+    std::cout << "feats: " << feats.size() << std::endl;
+  }
+}
+
 int main(int argc, char** argv) {
-  cv::Mat mat = cv::imread("0000444.png", CV_LOAD_IMAGE_COLOR);
-  std::vector<DFeatVect> feats = frame_to_feature_vectors(mat, true, false);
-  std::cout << "feats: " << feats.size() << std::endl;
+  std::cout << "===========================================================" << std::endl;
+  std::cout << " Delvr 1.0 - copyright (c) Sam Kelly - all rights reserved " << std::endl;
+  std::cout << "===========================================================" << std::endl;
+  std::cout << std::endl;
+  if (argc == 1) {
+    std::cout << "usage: delvr genfeats [translucent|opaque] [path/to/images] [path/to/outfile]" << std::endl;
+    return 0;
+  }
+  unsigned num_threads = std::thread::hardware_concurrency();
+  if (std::string(argv[1]) == "genfeats") {
+    if (argc != 5) {
+      std::cout << "wrong number of arguments!" << std::endl;
+      return 1;
+    }
+    bool translucent = false;
+    if (std::string(argv[2]) == "opaque") {
+      translucent = false;
+    } else if (std::string(argv[2]) == "translucent") {
+      translucent = true;
+    } else {
+      std::cout << "error: translucent / opaque not specified!" << std::endl;
+      return 1;
+    }
+    std::string images_path = std::string(argv[3]);
+    if (!boost::algorithm::ends_with(images_path, "/"))
+      images_path = images_path + "/";
+    std::string outpath = std::string(argv[4]);
+    std::cout << "Feature generation routine started." << std::endl;
+    std::cout << std::endl;
+    std::cout << "will use " << num_threads << " threads" << std::endl;
+    std::vector<std::string> imgs = match_files(images_path + "*.png");
+    std::cout << "found " << imgs.size() << " PNG files in " << images_path << std::endl;
+    std::vector<std::thread> threads;
+    threads.reserve(num_threads);
+    // divy up workload among available threads
+    std::vector<std::vector<std::string>> workload;
+    for(int i = 0; i < num_threads; i++)
+      workload.push_back(std::vector<std::string>());
+    for(int i = 0, j = 0; i < imgs.size(); i++, j++) {
+      workload[j].push_back(imgs[i]);
+      if (j == num_threads - 1)
+        j = -1;
+    }
+    // start threads
+    for(int i = 0; i < num_threads; i++) {
+      threads[i] = std::thread(genfeats_multithreaded, i, workload[i], outpath, translucent);
+    }
+    for(int i = 0; i < num_threads; i++) {
+      threads[i].join();
+    }
+    std::cout << "all threads finished" << std::endl;
+    return 0;
+  }
   return 0;
 }
