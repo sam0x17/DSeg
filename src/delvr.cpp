@@ -13,7 +13,7 @@ extern "C" {
   #include <vl/slic.h>
 }
 
-const int DSEG_LINE_LENGTH = 24;
+const int DSEG_GRID_SIZE = 512;
 
 inline float sq(float n) {
   return n * n;
@@ -21,6 +21,18 @@ inline float sq(float n) {
 
 float dist3d(float x1, float y1, float z1, float x2, float y2, float z2) {
   return sqrt(sq(x1 - x2) + sq(y1 - y2) + sq(z1 - z2));
+}
+
+inline int max(int a, int b) {
+  if (a >= b)
+    return a;
+  return b;
+}
+
+inline int min(int a, int b) {
+  if (a <= b)
+    return a;
+  return b;
 }
 
 void fill_magic_pink(cv::Mat &mat) {
@@ -54,6 +66,13 @@ class DPos {
     unsigned int x;
     unsigned int y;
 };
+
+DPos make_pos(int x, int y) {
+  DPos pos;
+  pos.x = x;
+  pos.y = y;
+  return pos;
+}
 
 class BSegment {
   public:
@@ -112,7 +131,8 @@ class BSegment {
 class DSegment {
   public:
     DColor cta_color; // closest color to average
-    float line[DSEG_LINE_LENGTH]; // 1D representation of outline, slope based
+    cv::Mat patch_orig;
+    cv::Mat patch_resized;
 };
 
 class DSegmentationResult {
@@ -125,7 +145,71 @@ int seg_at(vl_uint32 *segmentation, int i, int j, int cols) {
   return (int)segmentation[j + cols * i];
 }
 
-DSegmentationResult perform_segmentation(cv::Mat mat, int region, int min_region, float regularization=1500.0, bool return_image=false) {
+inline DPos project_point(int dest_width, int dest_height, int x, int y, float xmod, float ymod) {
+  DPos pos;
+  pos.x = min(max(round((float)x * xmod), 0), dest_width - 1);
+  pos.y = min(max(round((float)y * ymod), 0), dest_height - 1);
+  return pos;
+}
+
+inline bool in_bounds(int w, int h, int x, int y) {
+  return x >= 0 && y >= 0 && x < w && y < h;
+}
+
+cv::Mat resize_contour(cv::Mat &src, int dest_width, int dest_height) {
+  cv::Mat dest = cv::Mat(dest_width, dest_height, cv::DataType<unsigned char>::type);
+  //cv::Mat src = shift_image(sr);
+  float xmod = ((float)dest_width) / (float)src.cols;
+  float ymod = ((float)dest_height) / (float)src.rows;
+  for(int x = 0; x < dest_width; x++)
+    for(int y = 0; y < dest_height; y++)
+      dest.at<unsigned char>(x, y) = 255;
+  for(int x = 0; x < src.cols; x++) {
+    for(int y = 0; y < src.rows; y++) {
+      if (src.at<unsigned char>(x, y) != 0)
+        continue;
+      DPos dest_pos = project_point(dest_width, dest_height, x, y, xmod, ymod);
+      DPos border_cands[8] = {make_pos(x    , y - 1),  // TOP
+                              make_pos(x + 1, y - 1),  // TOP RIGHT
+                              make_pos(x + 1, y    ),  // RIGHT
+                              make_pos(x + 1, y + 1),  // BOTTOM RIGHT
+                              make_pos(x    , y + 1),  // BOTTOM
+                              make_pos(x - 1, y + 1),  // BOTTOM LEFT
+                              make_pos(x - 1, y    ),  // LEFT
+                              make_pos(x - 1, y - 1)}; // TOP LEFT
+      std::vector<DPos> border;
+      for(int i = 0; i < 8; i++) {
+        DPos pos = border_cands[i];
+        if (in_bounds(src.cols, src.rows, pos.x, pos.y) && src.at<unsigned char>(pos.x, pos.y) == 0)
+          border.push_back(project_point(dest_width, dest_height, pos.x, pos.y, xmod, ymod));
+      }
+      if (border.size() > 0)
+        border.push_back(border[0]); // enclose
+      std::vector<cv::Point> pts;
+      for(DPos pos : border) {
+        pts.push_back(cv::Point(pos.x, pos.y));
+      }
+      if (border.size() > 1) {
+        std::vector<std::vector<cv::Point>> polys;
+        polys.push_back(pts);
+        cv::fillPoly(dest, polys, 120);
+      }
+    }
+  }
+
+  for(int x = 0; x < src.cols; x++) {
+    for(int y = 0; y < src.rows; y++) {
+      if (src.at<unsigned char>(x, y) == 0) {
+        DPos proj = project_point(dest_width, dest_height, x, y, xmod, ymod);
+        //dest.at<unsigned char>(proj.x, proj.y) = 0;
+        cv::drawMarker(dest, cv::Point(proj.x, proj.y), 0);
+      }
+    }
+  }
+  return dest;
+}
+
+DSegmentationResult perform_segmentation(cv::Mat mat, int region, int min_region, float regularization=800.0, bool return_image=false) {
   cv::Mat matc;
   if (return_image)
     matc = mat.clone();
@@ -144,16 +228,13 @@ DSegmentationResult perform_segmentation(cv::Mat mat, int region, int min_region
     }
   }
   std::unordered_map<int, BSegment> bmap;
-
   // do segmentation with VLFeat SLIC
   vl_slic_segment(segmentation, image, width, height, channels, region, regularization, min_region);
-
   int label = 0;
   int label_top = -1;
   int label_bottom = -1;
   int label_left = -1;
   int label_right = -1;
-
   // record segmentation result
   for(int i = 0; i < mat.rows; i++) {
     for(int j = 0; j < mat.cols; j++) {
@@ -178,7 +259,7 @@ DSegmentationResult perform_segmentation(cv::Mat mat, int region, int min_region
           matc.at<cv::Vec3b>(i, j)[2] = 255;
         }
       }
-
+      // create bsegs
       int b = mat.at<cv::Vec3b>(i, j)[0];
       int g = mat.at<cv::Vec3b>(i, j)[1];
       int r = mat.at<cv::Vec3b>(i, j)[2];
@@ -203,18 +284,6 @@ DSegmentationResult perform_segmentation(cv::Mat mat, int region, int min_region
   return res;
 }
 
-inline int max(int a, int b) {
-  if (a >= b)
-    return a;
-  return b;
-}
-
-inline int min(int a, int b) {
-  if (a <= b)
-    return a;
-  return b;
-}
-
 DSegment generate_dseg(BSegment bseg, int num=0) {
   DSegment dseg;
   if (bseg.positions.size() == 0)
@@ -235,20 +304,25 @@ DSegment generate_dseg(BSegment bseg, int num=0) {
   }
   int w = max_x - min_x + 1;
   int h = max_y - min_y + 1;
-  cv::Mat patch = cv::Mat(w, h, cv::DataType<float>::type);
+  cv::Mat patch = cv::Mat(w, h, cv::DataType<unsigned char>::type);
   for(int x = 0; x < w; x++)
     for(int y = 0; y < h; y++)
-      patch.at<float>(x, y) = 0.0;
+      patch.at<unsigned char>(x, y) = 255;
   std::cout << "w: " << w << "  h: " << h << std::endl;
   for(DPos pos : bseg.positions) {
     int x = pos.x - min_x;
     int y = pos.y - min_y;
-    patch.at<float>(x, y) = 255.0;
+    patch.at<unsigned char>(x, y) = 0;
   }
   std::stringstream ss;
   ss << "patch_" << num << "_" << bseg.id << ".png";
-  cv::imwrite(ss.str(), patch);
+  //cv::imwrite(ss.str(), patch);
   std::cout << ss.str() << std::endl;
+  dseg.patch_orig = patch;
+  dseg.patch_resized = resize_contour(patch, DSEG_GRID_SIZE, DSEG_GRID_SIZE);
+  //dseg.patch_resized = cv::Mat(DSEG_GRID_SIZE, DSEG_GRID_SIZE, cv::DataType<unsigned char>::type);
+  //cv::resize(patch, dseg.patch_resized, dseg.patch_resized.size(), cv::INTER_AREA);
+  cv::imwrite(ss.str(), dseg.patch_resized);
   return dseg;
 }
 
@@ -266,11 +340,11 @@ std::vector<DSegment> generate_dsegs(std::unordered_map<int, BSegment> bmap, int
 
 int main(int argc, char** argv) {
   cv::Mat mat = cv::imread("0000444.png", CV_LOAD_IMAGE_COLOR);
-  fill_magic_pink(mat);
   //cv::Mat mat = cv::imread("../carrier.jpg", CV_LOAD_IMAGE_COLOR);
+  fill_magic_pink(mat);
   std::cout << "loaded image" << std::endl;
-  for(int scale = 1; scale <= 130;) {
-    DSegmentationResult res = perform_segmentation(mat, 4 + scale, (4 + scale) * 0.25, 1500.0, true);
+  for(int scale = 1; scale <= 85;) {
+    DSegmentationResult res = perform_segmentation(mat, 4 + scale, (4 + scale) * 0.25, 2500.0, true);
     std::stringstream ss;
     ss << "contours_" << scale << ".png";
     std::cout << ss.str() << std::endl;
