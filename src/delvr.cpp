@@ -218,17 +218,18 @@ class DFeatFile {
       return (unsigned char *)(buffer.data() + DSEG_DATA_SIZE * index);
     }
 
-    cv::Mat get_ANN_training_blob(int num_samples, int offset=0) {
-      if (num_samples > num_features) {
-        std::cout << "error: num_samples cannot exceed num_features!" << std::endl;
+    cv::Mat get_ANN_training_blob(int cutoff, int offset=0) {
+      if (cutoff > num_features) {
+        std::cout << "error: cutoff cannot exceed num_features!" << std::endl;
       }
-      std::cout << "converting to ANN blob..." << std::endl;
-      cv::Mat inputs(num_samples, DSEG_DATA_SIZE, CV_32F);
-      for(int i = offset; i < num_samples; i++) {
+      std::cout << "converting to cv::Mat blob for ANN..." << std::endl;
+      cv::Mat inputs(cutoff - offset, DSEG_DATA_SIZE, CV_32F);
+      for(int i = offset; i < cutoff; i++) {
         for(int j = 0; j < DSEG_DATA_SIZE; j++) {
           inputs.at<float>(i, j) = (float)(block(i)[j]);
         }
       }
+      std::cout << "done converting." << std::endl;
       return inputs;
     }
 };
@@ -239,6 +240,12 @@ class DSegmentationResult {
     cv::Mat segmented_image;
 };
 
+class DPair {
+  public:
+    unsigned char *block;
+    bool positive;
+};
+
 class ANNDataset {
   public:
     cv::Mat training_inputs;
@@ -247,12 +254,31 @@ class ANNDataset {
     cv::Mat validation_outputs;
     int input_dim;
     int output_dim;
-    int num_samples;
+    int total_samples;
     int num_training_samples;
     int num_validation_samples;
 
-    void load(DFeatFile &positives, DFeatFile &negatives, int validation_size) {
-
+    void load(DFeatFile &positives, DFeatFile &negatives, DFeatFile &validation_positives) {
+      input_dim = DSEG_DATA_SIZE;
+      output_dim = 1;
+      std::vector<DPair> pairs;
+      // add positive examples
+      for(int i = 0; i < positives.num_features; i++) {
+        DPair pair;
+        pair.positive = true;
+        pair.block = positives.block(i);
+        pairs.push_back(pair);
+      }
+      // add negative examples
+      for(int i = 0; i < negatives.num_features; i++) {
+        DPair pair;
+        pair.positive = false;
+        pair.block = negatives.block(i);
+        pairs.push_back(pair);
+      }
+      // shuffle pairs
+      std::shuffle(std::begin(pairs), std::end(pairs), rd);
+      std::cout << "total number of pairs: " << pairs.size() << std::endl;
     }
 };
 
@@ -649,9 +675,13 @@ int main(int argc, char** argv) {
     std::string positive_features_path = std::string(argv[2]);
     std::string negative_features_path = std::string(argv[3]);
     std::string output_path = std::string(argv[4]);
-    DFeatFile feats;
-    feats.load(positive_features_path, true);
-
+    DFeatFile positive_features;
+    positive_features.load(positive_features_path, true);
+    DFeatFile negative_features;
+    negative_features.load(negative_features_path, false);
+    ANNDataset dataset;
+    dataset.load(positive_features, negative_features, positive_features);
+    /*
     int num_samples = 100;
     cv::Mat inputs = feats.get_ANN_training_blob(num_samples);
 
@@ -674,15 +704,15 @@ int main(int argc, char** argv) {
       return -1;
 
     std::cout << "done training" << std::endl;
-/*
+
     std::cout << "\nweights[0]:\n" << net->getWeights( 0 ) << std::endl;
     std::cout << "\nweights[1]:\n" << net->getWeights( 1 ) << std::endl;
     std::cout << "\nweights[2]:\n" << net->getWeights( 2 ) << std::endl;
-    std::cout << "\nweights[3]:\n" << net->getWeights( 3 ) << std::endl;*/
+    std::cout << "\nweights[3]:\n" << net->getWeights( 3 ) << std::endl;
 
     cv::Mat output;
     net->predict(inputs, output);
-    std::cout << "\noutput:\n" << output << std::endl;
+    std::cout << "\noutput:\n" << output << std::endl;*/
   }
   return 0;
 }

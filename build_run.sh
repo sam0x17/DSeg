@@ -12,7 +12,7 @@ cd bin
 #./delvr genfeats translucent data/imgs/sovddg\ 128x128\ m-30\ crop-t sovddg.dfeats
 
 # feature generation (negative instances)
-./delvr genfeats opaque data/SUN2012/Images sun_negatives.dfeats
+#./delvr genfeats opaque data/SUN2012/Images sun_negatives.dfeats
 
 # detector training
-#./delvr traindetector data/hamina.dfeats data/null data/hamina_detector.brain
+./delvr traindetector data/hamina.dfeats data/sun_negatives.dfeats data/hamina_detector.brain
