@@ -540,15 +540,55 @@ int main(int argc, char** argv) {
     std::string positive_features_path = std::string(argv[2]);
     std::string negative_features_path = std::string(argv[3]);
     std::string output_path = std::string(argv[4]);
-    DFeatFile positives;
-    positives.load(positive_features_path, true);
+    //DFeatFile positives;
+    //positives.load(positive_features_path, true);
+    /*
     std::cout << "done" << std::endl;
     for(int block_num = 0; block_num < positives.num_features; block_num++) {
       unsigned char *block = positives.block(block_num);
       for(int i = sq(DSEG_GRID_SIZE) + 1; i < sq(DSEG_GRID_SIZE) + 4; i++)
         std::cout << (int)((unsigned char)(block[i])) << std::endl;;
       std::cout << std::endl;
-    }
+    }*/
+
+    int num_samples = 4;
+    std::vector<int> layer_sizes = {2, 4, 1};
+    cv::Ptr<cv::ml::ANN_MLP> net = cv::ml::ANN_MLP::create();
+    net->setLayerSizes(layer_sizes);
+    net->setActivationFunction(cv::ml::ANN_MLP::SIGMOID_SYM);
+    net->setTrainMethod(cv::ml::ANN_MLP::RPROP);
+    net->setTermCriteria(cv::TermCriteria(cv::TermCriteria::Type::EPS, 100000, 0.05));
+
+    float xor_in[8] = {0.0, 0.0,
+                       0.0, 1.0,
+                       1.0, 0.0,
+                       1.0, 1.0};
+    float xor_out[4] = {0.0, 1.0, 1.0, 0.0};
+
+    cv::Mat inputs(cv::Size(layer_sizes[0], num_samples), CV_32F);
+    for(int i = 0; i < num_samples; i++)
+      for(int j = 0; j < layer_sizes[0]; j++)
+        inputs.at<float>(i, j) = xor_in[i * layer_sizes[0] + j];
+
+    cv::Mat outputs(cv::Size(layer_sizes[layer_sizes.size() - 1], num_samples), CV_32F);
+    for(int i = 0; i < num_samples; i++)
+      for(int j = 0; j < layer_sizes[layer_sizes.size() - 1]; j++)
+        outputs.at<float>(i, j) = xor_out[i * layer_sizes[layer_sizes.size() - 1] + j];
+
+    std::cout << "inputs:\n" << inputs << std::endl;
+    std::cout << "outputs\n" << outputs << std::endl;
+
+    if (!net->train(inputs, cv::ml::ROW_SAMPLE, outputs))
+      return -1;
+
+    std::cout << "\nweights[0]:\n" << net->getWeights( 0 ) << std::endl;
+    std::cout << "\nweights[1]:\n" << net->getWeights( 1 ) << std::endl;
+    std::cout << "\nweights[2]:\n" << net->getWeights( 2 ) << std::endl;
+    std::cout << "\nweights[3]:\n" << net->getWeights( 3 ) << std::endl;
+
+    cv::Mat output;
+    net->predict(inputs, output);
+    std::cout << "\noutput:\n" << output << std::endl;
   }
   return 0;
 }
