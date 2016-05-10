@@ -252,15 +252,8 @@ class ANNDataset {
     cv::Mat training_outputs;
     cv::Mat validation_inputs;
     cv::Mat validation_outputs;
-    int input_dim;
-    int output_dim;
-    int total_samples;
-    int num_training_samples;
-    int num_validation_samples;
 
     void load(DFeatFile &positives, DFeatFile &negatives, DFeatFile &validation_positives) {
-      input_dim = DSEG_DATA_SIZE;
-      output_dim = 1;
       std::vector<DPair> positive_pairs;
       std::vector<DPair> negative_pairs;
       std::vector<DPair> validation_positive_pairs;
@@ -334,15 +327,15 @@ class ANNDataset {
       for(int i = 0; i < training_pairs.size(); i++)
         for(int j = 0; j < DSEG_DATA_SIZE; j++)
           training_inputs.at<float>(i, j) = ((float)(training_pairs[i].block[j])) / 255.0;
-      delete[] positives.block;
+      positives.buffer.clear();
 
       std::cout << "generating validation inputs image..." << std::endl;
       validation_inputs = cv::Mat(validation_pairs.size(), DSEG_DATA_SIZE, CV_32F);
       for(int i = 0; i < validation_pairs.size(); i++)
         for(int j = 0; j < DSEG_DATA_SIZE; j++)
           validation_inputs.at<float>(i, j) = ((float)(training_pairs[i].block[j])) / 255.0;
-      delete[] validation_positives.block;
-      delete[] negatives.block;
+      validation_positives.buffer.clear();
+      negatives.buffer.clear();
 
       std::cout << "generating validation outputs image..." << std::endl;
       training_outputs = cv::Mat(training_pairs.size(), 1, CV_32F);
@@ -774,38 +767,32 @@ int main(int argc, char** argv) {
     negative_features.load(negative_features_path, false);
     ANNDataset dataset;
     dataset.load(positive_features, negative_features, positive_features_test);
-    /*
-    int num_samples = 100;
-    cv::Mat inputs = feats.get_ANN_training_blob(num_samples);
 
-    std::vector<int> layer_sizes = {DSEG_DATA_SIZE, 4, 1};
+    int num_samples = dataset.training_inputs.rows;
+
+    std::vector<int> layer_sizes = {DSEG_DATA_SIZE, 32, 1};
     cv::Ptr<cv::ml::ANN_MLP> net = cv::ml::ANN_MLP::create();
     net->setLayerSizes(layer_sizes);
     net->setActivationFunction(cv::ml::ANN_MLP::SIGMOID_SYM);
     net->setTrainMethod(cv::ml::ANN_MLP::RPROP);
-    net->setTermCriteria(cv::TermCriteria(cv::TermCriteria::Type::EPS, 1000000, 0.01));
-
-    cv::Mat outputs(num_samples, layer_sizes[layer_sizes.size() - 1], CV_32F);
-    for(int i = 0; i < num_samples; i++)
-      for(int j = 0; j < layer_sizes[layer_sizes.size() - 1]; j++)
-        outputs.at<float>(i, j) = (float)((i % 2) * 1.0);
+    net->setTermCriteria(cv::TermCriteria(cv::TermCriteria::Type::EPS, 1000000, 0.5));
 
     //std::cout << "inputs:\n" << inputs << std::endl;
-    std::cout << "outputs\n" << outputs << std::endl;
+    //std::cout << "outputs\n" << outputs << std::endl;
     std::cout << "training.." << std::endl;
-    if (!net->train(inputs, cv::ml::ROW_SAMPLE, outputs))
+    if (!net->train(dataset.training_inputs, cv::ml::ROW_SAMPLE, dataset.training_outputs))
       return -1;
 
     std::cout << "done training" << std::endl;
 
-    std::cout << "\nweights[0]:\n" << net->getWeights( 0 ) << std::endl;
+    /*std::cout << "\nweights[0]:\n" << net->getWeights( 0 ) << std::endl;
     std::cout << "\nweights[1]:\n" << net->getWeights( 1 ) << std::endl;
     std::cout << "\nweights[2]:\n" << net->getWeights( 2 ) << std::endl;
-    std::cout << "\nweights[3]:\n" << net->getWeights( 3 ) << std::endl;
+    std::cout << "\nweights[3]:\n" << net->getWeights( 3 ) << std::endl;*/
 
-    cv::Mat output;
-    net->predict(inputs, output);
-    std::cout << "\noutput:\n" << output << std::endl;*/
+    //cv::Mat output;
+    //net->predict(dataset.training_inputs, output);
+    //std::cout << "\noutput:\n" << output << std::endl;
   }
   return 0;
 }
