@@ -21,7 +21,8 @@ extern "C" {
   #include <vl/slic.h>
 }
 
-const int ANN_EPOC_INCREMENT = 10;
+const int ANN_TRAINING_SET_LIMIT = 500000;
+const int ANN_EPOC_INCREMENT = 5;
 const int DSEG_GRID_SIZE = 16;
 const int DSEG_POINTS_THRESHOLD = 8;
 const int DSEG_MAX_IMG_SIZE = 800;
@@ -291,7 +292,7 @@ class ANNDataset {
         if (validation_negative_pairs.size() < validation_positive_pairs.size()) {
           validation_negative_pairs.push_back(pair);
         } else {
-          if (training_negative_pairs.size() < 500000) {
+          if (training_negative_pairs.size() < ANN_TRAINING_SET_LIMIT) {
             training_negative_pairs.push_back(pair);
           } else {
             break;
@@ -670,8 +671,12 @@ void train_ANN(cv::Ptr<cv::ml::ANN_MLP> &net, ANNDataset &dataset, double target
     net->train(dataset.training_inputs, cv::ml::ROW_SAMPLE, dataset.training_outputs);
     epoch += ANN_EPOC_INCREMENT;
     std::cout << "epoch: " << epoch << std::endl;
-    int num_correct = 0;
+    int num_right = 0;
     int num_wrong = 0;
+    int num_negative_right = 0;
+    int num_negative_wrong = 0;
+    int num_positive_right = 0;
+    int num_positive_wrong = 0;
     cv::Mat output;
     net->predict(dataset.validation_inputs, output);
     for(int i = 0; i < output.rows; i++) {
@@ -679,16 +684,31 @@ void train_ANN(cv::Ptr<cv::ml::ANN_MLP> &net, ANNDataset &dataset, double target
       if (std::isnan(actual))
         actual = 0.0;
       float expected = dataset.validation_outputs.at<float>(0, i);
-      bool correct = round(max(0, actual)) == round(expected);
-      if (correct)
-        num_correct += 1;
-      else
+      bool right = round(max(0, actual)) == round(expected);
+      if (right) {
+        num_right += 1;
+        if (round(expected) == 1) {
+          num_positive_right += 1;
+        } else {
+          num_negative_right += 1;
+        }
+      } else {
         num_wrong += 1;
+        if (round(expected) == 1) {
+          num_positive_wrong += 1;
+        } else {
+          num_negative_wrong += 1;
+        }
+      }
     }
-    float accuracy = (float)num_correct / (float)(num_wrong + num_correct);
+    float accuracy = (float)num_right / (float)(num_wrong + num_right);
     err = 1.0 - accuracy;
-    std::cout << "num_correct: " << num_correct << std::endl;
-    std::cout << "num_wrong:   " << num_wrong << std::endl;
+    std::cout << "num_right: " << num_right << std::endl;
+    std::cout << "num_wrong: " << num_wrong << std::endl;
+    std::cout << "  p_right: " << num_positive_right << std::endl;
+    std::cout << "  p_wrong: " << num_positive_wrong << std::endl;
+    std::cout << "  n_right: " << num_negative_right << std::endl;
+    std::cout << "  n_wrong: " << num_negative_wrong << std::endl;
     std::cout << "accuracy: " << accuracy << std::endl;
   } while(err > target_error);
   std::cout << "training stopped (target error threshold reached)" << std::endl;
@@ -798,9 +818,7 @@ int main(int argc, char** argv) {
     ANNDataset dataset;
     dataset.load(positive_features, negative_features, positive_features_test);
 
-    int num_samples = dataset.training_inputs.rows;
-
-    std::vector<int> layer_sizes = {DSEG_DATA_SIZE, 84, 1};
+    std::vector<int> layer_sizes = {DSEG_DATA_SIZE, 48, 1};
     cv::Ptr<cv::ml::ANN_MLP> net = cv::ml::ANN_MLP::create();
     net->setLayerSizes(layer_sizes);
     net->setActivationFunction(cv::ml::ANN_MLP::SIGMOID_SYM);
