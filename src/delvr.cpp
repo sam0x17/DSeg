@@ -23,7 +23,7 @@ extern "C" {
 const int DSEG_GRID_SIZE = 16;
 const int DSEG_POINTS_THRESHOLD = 8;
 const int DSEG_MAX_IMG_SIZE = 800;
-const int DSEG_POSITIVE_SCALE_START = 2;
+const int DSEG_POSITIVE_SCALE_START = 1;
 const int DSEG_POSITIVE_SCALE_END = 60;
 const int DSEG_NEGATIVE_SCALE_START = 5;
 const int DSEG_NEGATIVE_SCALE_END = 45;
