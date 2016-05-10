@@ -6,4 +6,5 @@ cd scripts
 ./install_vlfeat.sh
 ./install_caffe.sh
 ./download_data.sh
+./download_sun.sh
 echo "done."
