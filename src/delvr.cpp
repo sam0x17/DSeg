@@ -4,6 +4,7 @@
 #include <vector>
 #include <unordered_map>
 #include <algorithm>
+#include <random>
 #include <limits>
 #include <opencv2/opencv.hpp>
 #include <boost/multi_array.hpp>
@@ -21,9 +22,25 @@ extern "C" {
 
 const int DSEG_GRID_SIZE = 16;
 const int DSEG_POINTS_THRESHOLD = 8;
+const int DSEG_MAX_IMG_SIZE = 800;
+const int DSEG_POSITIVE_SCALE_START = 2;
+const int DSEG_POSITIVE_SCALE_END = 60;
+const int DSEG_NEGATIVE_SCALE_START = 5;
+const int DSEG_NEGATIVE_SCALE_END = 45;
+const int DSEG_MAX_OPAQUE_IMAGES = 1000;
 const int DSEG_DATA_SIZE = DSEG_GRID_SIZE * DSEG_GRID_SIZE + 4;
 const float DSEG_REGION_RATIO = 0.25;
 const float DSEG_REGULARIZATION = 4000.0;
+std::random_device rd;
+std::mt19937 g(rd());
+
+// vector addition
+template <typename T>
+std::vector<T>& operator+=(std::vector<T>& a, const std::vector<T>& b)
+{
+    a.insert(a.end(), b.begin(), b.end());
+    return a;
+}
 
 inline float sq(float n) {
   return n * n;
@@ -409,8 +426,8 @@ DSegment generate_dseg(BSegment bseg, int num=0) {
     int y = pos.y - min_y;
     patch.at<unsigned char>(x, y) = 0;
   }
-  std::stringstream ss;
-  ss << "patch_" << num << "_" << bseg.id << ".png";
+  //std::stringstream ss;
+  //ss << "patch_" << num << "_" << bseg.id << ".png";
   //cv::imwrite(ss.str(), patch);
   //dseg.patch_orig = patch;
   dseg.patch_resized = resize_contour(patch, DSEG_GRID_SIZE, DSEG_GRID_SIZE);
@@ -435,9 +452,31 @@ std::vector<DSegment> generate_dsegs(std::unordered_map<int, BSegment> bmap, int
 std::vector<DFeatVect> frame_to_feature_vectors(cv::Mat &mat, bool translucent=true, bool output_images=false) {
   if (translucent)
     fill_magic_pink(mat);
+  if (mat.rows > DSEG_MAX_IMG_SIZE || mat.cols > DSEG_MAX_IMG_SIZE) {
+    int new_rows, new_cols;
+    if (mat.rows > mat.cols) {
+      new_rows = DSEG_MAX_IMG_SIZE;
+      new_cols = min(round(((float)DSEG_MAX_IMG_SIZE / (float)mat.rows) * mat.cols), DSEG_MAX_IMG_SIZE);
+    } else {
+      new_cols = DSEG_MAX_IMG_SIZE;
+      new_rows = min(round(((float)DSEG_MAX_IMG_SIZE / (float)mat.cols) * mat.rows), DSEG_MAX_IMG_SIZE);
+    }
+    cv::Mat tmp;
+    //std::cout << "old: " << mat.cols << ", " << mat.rows << " => " << new_cols << ", " << new_rows << std::endl;
+    cv::resize(mat, tmp, cv::Size(new_cols, new_rows));
+    mat = tmp.clone();
+  }
   std::vector<DSegment> all_dsegs;
-  for(int scale = 1; scale <= 60;) {
-    DSegmentationResult res = perform_segmentation(mat, 4 + scale, (4 + scale) * DSEG_REGION_RATIO, DSEG_REGULARIZATION, false);
+  int scale_start, scale_end;
+  if (translucent) {
+    scale_start = DSEG_POSITIVE_SCALE_START;
+    scale_end = DSEG_POSITIVE_SCALE_END;
+  } else {
+    scale_start = DSEG_NEGATIVE_SCALE_START;
+    scale_end = DSEG_NEGATIVE_SCALE_END;
+  }
+  for(int scale = scale_start; scale <= scale_end;) {
+    DSegmentationResult res = perform_segmentation(mat, 4 + scale, (4 + scale) * DSEG_REGION_RATIO, DSEG_REGULARIZATION, output_images);
     if (output_images) {
       std::stringstream ss;
       ss << "contours_" << scale << ".png";
@@ -446,18 +485,22 @@ std::vector<DFeatVect> frame_to_feature_vectors(cv::Mat &mat, bool translucent=t
     }
     std::vector<DSegment> dsegs = generate_dsegs(res.bmap, scale);
     all_dsegs.insert(all_dsegs.end(), dsegs.begin(), dsegs.end());
-    if (scale < 10)
-      scale += 1;
-    else if (scale < 20)
-      scale += 2;
-    else if (scale < 30)
-      scale += 4;
-    else if (scale < 40)
-      scale += 8;
-    else if (scale < 50)
+    if (translucent) {
+      if (scale < 10)
+        scale += 1;
+      else if (scale < 20)
+        scale += 2;
+      else if (scale < 30)
+        scale += 4;
+      else if (scale < 40)
+        scale += 8;
+      else if (scale < 50)
+        scale += 10;
+      else
+        scale += 15;
+    } else {
       scale += 10;
-    else
-      scale += 15;
+    }
   }
   std::vector<DFeatVect> feats;
   for(DSegment dseg : all_dsegs)
@@ -477,10 +520,12 @@ std::vector<std::string> match_files(const std::string &pattern) {
   return files;
 }
 
+int num_done = 0;
 std::mutex print_mutex;
 void thread_print(int thread_num, std::string msg) {
   print_mutex.lock();
-  std::cout << "#" << thread_num << ": " << msg << std::endl;
+  num_done++;
+  std::cout << "#" << thread_num << "(" << num_done << "): " << msg << std::endl;
   print_mutex.unlock();
 }
 
@@ -488,12 +533,12 @@ std::mutex file_mutex;
 std::ofstream out_file;
 
 void genfeats_multithreaded(int thread_num, std::vector<std::string> img_paths, std::string outfile, bool translucent) {
-  thread_print(thread_num, "[ STARTED ]");
-  std::this_thread::sleep_for(std::chrono::milliseconds(1000));
   for(std::string path : img_paths) {
-    thread_print(thread_num, "processing " + path);
     cv::Mat mat = cv::imread(path, CV_LOAD_IMAGE_COLOR);
     std::vector<DFeatVect> feats = frame_to_feature_vectors(mat, translucent, false);
+    std::stringstream ss;
+    ss << "found " << feats.size() << " features in " << path;
+    thread_print(thread_num, ss.str());
     file_mutex.lock();
     for(DFeatVect feat : feats) {
       out_file.write(feat.data, sizeof(feat.data));
@@ -544,25 +589,47 @@ int main(int argc, char** argv) {
     std::string outpath = std::string(argv[4]);
     std::cout << "Feature generation routine started." << std::endl;
     std::cout << std::endl;
+
+    std::vector<std::string> imgs;
+    if (translucent) {
+      imgs = match_files(images_path + "*.png");
+      std::cout << "found " << imgs.size() << " PNG files in " << images_path << std::endl;
+    } else {
+      // hack for SUN since glob does not work recursively
+      imgs = match_files(images_path + "*.jpg");
+      imgs += match_files(images_path + "**/*.jpg");
+      imgs += match_files(images_path + "**/**/*.jpg");
+      imgs += match_files(images_path + "**/**/**/*.jpg");
+      imgs += match_files(images_path + "**/**/**/**/*.jpg");
+      imgs += match_files(images_path + "**/**/**/**/**/*.jpg");
+      std::cout << "found " << imgs.size() << " JPG files in " << images_path << std::endl;
+    }
+    std::cout << "randomly shuffling images..." << std::endl;
+    std::shuffle(std::begin(imgs), std::end(imgs), rd);
+    std::cout << "done shuffling." << std::endl;
+
     std::cout << "will use " << num_threads << " threads" << std::endl;
-    std::vector<std::string> imgs = match_files(images_path + "*.png");
-    std::cout << "found " << imgs.size() << " PNG files in " << images_path << std::endl;
+    std::cout << "creating threads..." << std::endl;
     std::vector<std::thread> threads;
-    threads.reserve(num_threads);
     // divy up workload among available threads
+    int num_added = 0;
     std::vector<std::vector<std::string>> workload;
     for(int i = 0; i < num_threads; i++)
       workload.push_back(std::vector<std::string>());
     for(int i = 0, j = 0; i < imgs.size(); i++, j++) {
+      num_added++;
+      if (!translucent && num_added > DSEG_MAX_OPAQUE_IMAGES)
+        break;
       workload[j].push_back(imgs[i]);
       if (j == num_threads - 1)
         j = -1;
     }
+    std::cout << "will use " << num_added << " images" << std::endl;
     // set up io
     out_file.open(outpath, std::ios::out | std::ios::app | std::ios::binary);
     // start threads
     for(int i = 0; i < num_threads; i++) {
-      threads[i] = std::thread(genfeats_multithreaded, i, workload[i], outpath, translucent);
+      threads.push_back(std::thread(genfeats_multithreaded, i, workload[i], outpath, translucent));
     }
     for(int i = 0; i < num_threads; i++) {
       threads[i].join();
