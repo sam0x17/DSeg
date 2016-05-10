@@ -14,4 +14,4 @@ cd bin
 #./delvr genfeats translucent data/imgs/sovddg\ 128x128\ m-30\ crop-t sovddg.dfeats
 
 # detector training
-./delvr traindetector hamina.dfeats data/null data/hamina_detector.brain
+./delvr traindetector data/hamina.dfeats data/null data/hamina_detector.brain
