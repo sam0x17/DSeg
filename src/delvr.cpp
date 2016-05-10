@@ -27,7 +27,7 @@ const int DSEG_POSITIVE_SCALE_START = 1;
 const int DSEG_POSITIVE_SCALE_END = 60;
 const int DSEG_NEGATIVE_SCALE_START = 5;
 const int DSEG_NEGATIVE_SCALE_END = 45;
-const int DSEG_MAX_OPAQUE_IMAGES = 1000;
+const int DSEG_MAX_OPAQUE_IMAGES = 2000;
 const int DSEG_DATA_SIZE = DSEG_GRID_SIZE * DSEG_GRID_SIZE + 4;
 const float DSEG_REGION_RATIO = 0.25;
 const float DSEG_REGULARIZATION = 4000.0;
@@ -261,24 +261,114 @@ class ANNDataset {
     void load(DFeatFile &positives, DFeatFile &negatives, DFeatFile &validation_positives) {
       input_dim = DSEG_DATA_SIZE;
       output_dim = 1;
-      std::vector<DPair> pairs;
+      std::vector<DPair> positive_pairs;
+      std::vector<DPair> negative_pairs;
+      std::vector<DPair> validation_positive_pairs;
+      std::vector<DPair> training_negative_pairs;
+      std::vector<DPair> validation_negative_pairs;
       // add positive examples
       for(int i = 0; i < positives.num_features; i++) {
         DPair pair;
         pair.positive = true;
         pair.block = positives.block(i);
-        pairs.push_back(pair);
+        positive_pairs.push_back(pair);
+      }
+      // add validation positive examples
+      for(int i = 0; i < validation_positives.num_features; i++) {
+        DPair pair;
+        pair.positive = true;
+        pair.block = positives.block(i);
+        validation_positive_pairs.push_back(pair);
       }
       // add negative examples
       for(int i = 0; i < negatives.num_features; i++) {
         DPair pair;
         pair.positive = false;
         pair.block = negatives.block(i);
-        pairs.push_back(pair);
+        negative_pairs.push_back(pair);
       }
       // shuffle pairs
-      std::shuffle(std::begin(pairs), std::end(pairs), rd);
-      std::cout << "total number of pairs: " << pairs.size() << std::endl;
+      std::shuffle(std::begin(positive_pairs), std::end(positive_pairs), rd);
+      std::shuffle(std::begin(negative_pairs), std::end(negative_pairs), rd);
+      std::shuffle(std::begin(validation_positive_pairs), std::end(validation_positive_pairs), rd);
+      // divide training and validation
+      for(DPair pair : negative_pairs) {
+        if (validation_negative_pairs.size() < validation_positive_pairs.size()) {
+          validation_negative_pairs.push_back(pair);
+        } else {
+          training_negative_pairs.push_back(pair);
+        }
+      }
+      std::cout << negative_pairs.size() << " negative features available" << std::endl;
+      std::cout << validation_negative_pairs.size() << " negative features allocated to validation set" << std::endl;
+      std::cout << training_negative_pairs.size() << " negative features available for training set" << std::endl;
+      negative_pairs.clear();
+      std::cout << positive_pairs.size() << " positive features available for training set" << std::endl;
+      std::vector<DPair> training_pairs;
+      for(DPair pair : positive_pairs) {
+        if (training_pairs.size() < training_negative_pairs.size()) {
+          training_pairs.push_back(pair);
+        } else {
+          break;
+        }
+      }
+      training_pairs += training_negative_pairs;
+      std::cout << "final size of training set:  " << training_pairs.size() << std::endl;
+      std::vector<DPair> validation_pairs;
+      validation_pairs += validation_positive_pairs;
+      validation_pairs += validation_negative_pairs;
+      std::cout << "final size of validation set: " << validation_pairs.size() << std::endl;
+      // final shuffle
+      std::shuffle(std::begin(validation_pairs), std::end(validation_pairs), rd);
+      std::shuffle(std::begin(training_pairs), std::end(training_pairs), rd);
+      positive_pairs.clear();
+      negative_pairs.clear();
+      validation_positive_pairs.clear();
+      validation_negative_pairs.clear();
+      training_negative_pairs.clear();
+      std::cout << "done shuffling" << std::endl;
+
+      // create images
+      std::cout << "generating training inputs image..." << std::endl;
+      training_inputs = cv::Mat(training_pairs.size(), DSEG_DATA_SIZE, CV_32F);
+      for(int i = 0; i < training_pairs.size(); i++)
+        for(int j = 0; j < DSEG_DATA_SIZE; j++)
+          training_inputs.at<float>(i, j) = ((float)(training_pairs[i].block[j])) / 255.0;
+      delete[] positives.block;
+
+      std::cout << "generating validation inputs image..." << std::endl;
+      validation_inputs = cv::Mat(validation_pairs.size(), DSEG_DATA_SIZE, CV_32F);
+      for(int i = 0; i < validation_pairs.size(); i++)
+        for(int j = 0; j < DSEG_DATA_SIZE; j++)
+          validation_inputs.at<float>(i, j) = ((float)(training_pairs[i].block[j])) / 255.0;
+      delete[] validation_positives.block;
+      delete[] negatives.block;
+
+      std::cout << "generating validation outputs image..." << std::endl;
+      training_outputs = cv::Mat(training_pairs.size(), 1, CV_32F);
+      for(int i = 0; i < training_pairs.size(); i++) {
+        float val;
+        if (training_pairs[i].positive) {
+          val = 1.0;
+        } else {
+          val = 0.0;
+        }
+        training_outputs.at<float>(i, 0) = val;
+      }
+
+      std::cout << "generating validation outputs image..." << std::endl;
+      validation_outputs = cv::Mat(validation_pairs.size(), 1, CV_32F);
+      for(int i = 0; i < validation_pairs.size(); i++) {
+        float val;
+        if (validation_pairs[i].positive) {
+          val = 1.0;
+        } else {
+          val = 0.0;
+        }
+        validation_outputs.at<float>(i, 0) = val;
+      }
+
+      std::cout << "done." << std::endl;
     }
 };
 
@@ -644,7 +734,7 @@ int main(int argc, char** argv) {
       workload.push_back(std::vector<std::string>());
     for(int i = 0, j = 0; i < imgs.size(); i++, j++) {
       num_added++;
-      if (!translucent && num_added > DSEG_MAX_OPAQUE_IMAGES)
+      if (!translucent && num_added >= DSEG_MAX_OPAQUE_IMAGES)
         break;
       workload[j].push_back(imgs[i]);
       if (j == num_threads - 1)
@@ -668,19 +758,22 @@ int main(int argc, char** argv) {
 
   // BEGIN TRAIN DETECTOR
   } else if(std::string(argv[1]) == "traindetector") {
-    if (argc != 5) {
+    if (argc != 6) {
       std::cout << "error: wrong number of arguments!" << std::endl;
       exit(1);
     }
     std::string positive_features_path = std::string(argv[2]);
     std::string negative_features_path = std::string(argv[3]);
-    std::string output_path = std::string(argv[4]);
+    std::string positive_features_test_path = std::string(argv[4]);
+    std::string output_path = std::string(argv[5]);
     DFeatFile positive_features;
     positive_features.load(positive_features_path, true);
+    DFeatFile positive_features_test;
+    positive_features_test.load(positive_features_test_path, true);
     DFeatFile negative_features;
     negative_features.load(negative_features_path, false);
     ANNDataset dataset;
-    dataset.load(positive_features, negative_features, positive_features);
+    dataset.load(positive_features, negative_features, positive_features_test);
     /*
     int num_samples = 100;
     cv::Mat inputs = feats.get_ANN_training_blob(num_samples);

@@ -3,7 +3,7 @@
 cd bin
 
 # feature generation (positive instances)
-./delvr genfeats translucent data/test_imgs/hamina\ 128x128\ crop-true/ hamina_test.dfeats
+#./delvr genfeats translucent data/test_imgs/hamina\ 128x128\ crop-true/ hamina_test.dfeats
 #./delvr genfeats translucent data/imgs/hamina\ 128x128\ m-30\ crop-t hamina.dfeats
 #./delvr genfeats translucent data/imgs/m4a1_s\ 128x128\ m-30\ crop-t m4a1.dfeats
 #./delvr genfeats translucent data/imgs/halifax\ 128x128\ m-30\ crop-t halifax.dfeats
@@ -16,4 +16,4 @@ cd bin
 #./delvr genfeats opaque data/SUN2012/Images sun_negatives.dfeats
 
 # detector training
-#./delvr traindetector data/hamina.dfeats data/sun_negatives.dfeats data/hamina_detector.brain
+./delvr traindetector data/hamina.dfeats data/sun_negatives.dfeats data/hamina_test.dfeats data/hamina_detector.brain
