@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <random>
 #include <limits>
+#include <cmath>
 #include <opencv2/opencv.hpp>
 #include <boost/multi_array.hpp>
 #include <boost/algorithm/string/predicate.hpp>
@@ -20,6 +21,7 @@ extern "C" {
   #include <vl/slic.h>
 }
 
+const int ANN_EPOC_INCREMENT = 10;
 const int DSEG_GRID_SIZE = 16;
 const int DSEG_POINTS_THRESHOLD = 8;
 const int DSEG_MAX_IMG_SIZE = 800;
@@ -289,7 +291,11 @@ class ANNDataset {
         if (validation_negative_pairs.size() < validation_positive_pairs.size()) {
           validation_negative_pairs.push_back(pair);
         } else {
-          training_negative_pairs.push_back(pair);
+          if (training_negative_pairs.size() < 500000) {
+            training_negative_pairs.push_back(pair);
+          } else {
+            break;
+          }
         }
       }
       std::cout << negative_pairs.size() << " negative features available" << std::endl;
@@ -333,11 +339,11 @@ class ANNDataset {
       validation_inputs = cv::Mat(validation_pairs.size(), DSEG_DATA_SIZE, CV_32F);
       for(int i = 0; i < validation_pairs.size(); i++)
         for(int j = 0; j < DSEG_DATA_SIZE; j++)
-          validation_inputs.at<float>(i, j) = ((float)(training_pairs[i].block[j])) / 255.0;
+          validation_inputs.at<float>(i, j) = ((float)(validation_pairs[i].block[j])) / 255.0;
       validation_positives.buffer.clear();
       negatives.buffer.clear();
 
-      std::cout << "generating validation outputs image..." << std::endl;
+      std::cout << "generating training outputs image..." << std::endl;
       training_outputs = cv::Mat(training_pairs.size(), 1, CV_32F);
       for(int i = 0; i < training_pairs.size(); i++) {
         float val;
@@ -656,11 +662,35 @@ void genfeats_multithreaded(int thread_num, std::vector<std::string> img_paths, 
   }
 }
 
-void train_ANN(cv::Ptr<cv::ml::ANN_MLP> &net, cv::Mat &inputs, cv::Mat &outputs, double target_error=0.1) {
-  double error = 1.0;
+void train_ANN(cv::Ptr<cv::ml::ANN_MLP> &net, ANNDataset &dataset, double target_error=0.2) {
+  std::cout << "training..." << std::endl;
+  double err = 1.0;
+  int epoch = 0;
   do {
-
-  } while(error > target_error);
+    net->train(dataset.training_inputs, cv::ml::ROW_SAMPLE, dataset.training_outputs);
+    epoch += ANN_EPOC_INCREMENT;
+    std::cout << "epoch: " << epoch << std::endl;
+    int num_correct = 0;
+    int num_wrong = 0;
+    cv::Mat output;
+    net->predict(dataset.validation_inputs, output);
+    for(int i = 0; i < output.rows; i++) {
+      float actual = output.at<float>(0, i);
+      if (std::isnan(actual))
+        actual = 0.0;
+      float expected = dataset.validation_outputs.at<float>(0, i);
+      bool correct = round(max(0, actual)) == round(expected);
+      if (correct)
+        num_correct += 1;
+      else
+        num_wrong += 1;
+    }
+    float accuracy = (float)num_correct / (float)(num_wrong + num_correct);
+    err = 1.0 - accuracy;
+    std::cout << "num_correct: " << num_correct << std::endl;
+    std::cout << "num_wrong:   " << num_wrong << std::endl;
+    std::cout << "accuracy: " << accuracy << std::endl;
+  } while(err > target_error);
   std::cout << "training stopped (target error threshold reached)" << std::endl;
 
 }
@@ -770,29 +800,14 @@ int main(int argc, char** argv) {
 
     int num_samples = dataset.training_inputs.rows;
 
-    std::vector<int> layer_sizes = {DSEG_DATA_SIZE, 32, 1};
+    std::vector<int> layer_sizes = {DSEG_DATA_SIZE, 84, 1};
     cv::Ptr<cv::ml::ANN_MLP> net = cv::ml::ANN_MLP::create();
     net->setLayerSizes(layer_sizes);
     net->setActivationFunction(cv::ml::ANN_MLP::SIGMOID_SYM);
     net->setTrainMethod(cv::ml::ANN_MLP::RPROP);
-    net->setTermCriteria(cv::TermCriteria(cv::TermCriteria::Type::EPS, 1000000, 0.5));
+    net->setTermCriteria(cv::TermCriteria(cv::TermCriteria::Type::MAX_ITER, ANN_EPOC_INCREMENT, 0.0));
 
-    //std::cout << "inputs:\n" << inputs << std::endl;
-    //std::cout << "outputs\n" << outputs << std::endl;
-    std::cout << "training.." << std::endl;
-    if (!net->train(dataset.training_inputs, cv::ml::ROW_SAMPLE, dataset.training_outputs))
-      return -1;
-
-    std::cout << "done training" << std::endl;
-
-    /*std::cout << "\nweights[0]:\n" << net->getWeights( 0 ) << std::endl;
-    std::cout << "\nweights[1]:\n" << net->getWeights( 1 ) << std::endl;
-    std::cout << "\nweights[2]:\n" << net->getWeights( 2 ) << std::endl;
-    std::cout << "\nweights[3]:\n" << net->getWeights( 3 ) << std::endl;*/
-
-    //cv::Mat output;
-    //net->predict(dataset.training_inputs, output);
-    //std::cout << "\noutput:\n" << output << std::endl;
+    train_ANN(net, dataset, 0.2);
   }
   return 0;
 }
