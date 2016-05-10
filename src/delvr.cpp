@@ -201,13 +201,13 @@ class DFeatFile {
       return (unsigned char *)(buffer.data() + DSEG_DATA_SIZE * index);
     }
 
-    cv::Mat get_ANN_training_blob(int num_samples) {
+    cv::Mat get_ANN_training_blob(int num_samples, int offset=0) {
       if (num_samples > num_features) {
         std::cout << "error: num_samples cannot exceed num_features!" << std::endl;
       }
       std::cout << "converting to ANN blob..." << std::endl;
       cv::Mat inputs(num_samples, DSEG_DATA_SIZE, CV_32F);
-      for(int i = 0; i < num_samples; i++) {
+      for(int i = offset; i < num_samples; i++) {
         for(int j = 0; j < DSEG_DATA_SIZE; j++) {
           inputs.at<float>(i, j) = (float)(block(i)[j]);
         }
@@ -220,6 +220,23 @@ class DSegmentationResult {
   public:
     std::unordered_map<int, BSegment> bmap;
     cv::Mat segmented_image;
+};
+
+class ANNDataset {
+  public:
+    cv::Mat training_inputs;
+    cv::Mat training_outputs;
+    cv::Mat validation_inputs;
+    cv::Mat validation_outputs;
+    int input_dim;
+    int output_dim;
+    int num_samples;
+    int num_training_samples;
+    int num_validation_samples;
+
+    void load(DFeatFile &positives, DFeatFile &negatives, int validation_size) {
+
+    }
 };
 
 int seg_at(vl_uint32 *segmentation, int i, int j, int cols) {
@@ -237,6 +254,8 @@ inline bool in_bounds(int w, int h, int x, int y) {
   return x >= 0 && y >= 0 && x < w && y < h;
 }
 
+// novel algorithm for vectorizing and resizing solid-color images
+// preserves softness of edges
 cv::Mat resize_contour(cv::Mat &src, int dest_width, int dest_height) {
   cv::Mat dest = cv::Mat(dest_width, dest_height, cv::DataType<unsigned char>::type);
   float xmod = ((float)dest_width) / (float)src.cols;
@@ -276,7 +295,7 @@ cv::Mat resize_contour(cv::Mat &src, int dest_width, int dest_height) {
       }
     }
   }
-  /*
+  /* commented out code for drawing markers
   for(int x = 0; x < src.cols; x++) {
     for(int y = 0; y < src.rows; y++) {
       if (src.at<unsigned char>(x, y) == 0) {
@@ -481,6 +500,15 @@ void genfeats_multithreaded(int thread_num, std::vector<std::string> img_paths, 
     }
     file_mutex.unlock();
   }
+}
+
+void train_ANN(cv::Ptr<cv::ml::ANN_MLP> &net, cv::Mat &inputs, cv::Mat &outputs, double target_error=0.1) {
+  double error = 1.0;
+  do {
+
+  } while(error > target_error);
+  std::cout << "training stopped (target error threshold reached)" << std::endl;
+
 }
 
 int main(int argc, char** argv) {
