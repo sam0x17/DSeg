@@ -49,6 +49,7 @@ anchor, and railing of the carrier) are almost perfectly segmented by highly
 unique superpixels.
 
 ![](https://storage.googleapis.com/durosoft-shared/delvr/contours_235.png)
+
 *Fig. 1: A superpixel segmented aircraft carrier. Salient features are revealed by the superpixels.*
 
 From this example, several intuitions arise:
@@ -73,6 +74,7 @@ use synthetic renderings of 3D models to generate training data that:
 * Is easy to generate, no humans required once a 3D model is made
 
 ![Hamina Missile Boat](http://i.imgur.com/xryMdTz.jpg?1)
+
 *Fig. 2: 3D rendering of a Hamina-class missile boat, one of the models used to train DSeg*
 
 ## DSeg Feature Extraction Pipeline
@@ -137,9 +139,11 @@ in either excessive blurring or pixelation when up-scaling very small features (
 are quite common in DSeg, as most features are approximately 6 x 6 pixels in size.
 This blurring or pixelation means that a neural network will be able to tell that
 the feature in question was up-scaled. The purpose of scale invariance is to hide
-all evidence that any sort of up-scaling or down-scaling has taken place
+all evidence that any sort of up-scaling or down-scaling has taken place, so this
+is undesirable.
 
 ![ResizeContour Upscaling Demo](https://storage.googleapis.com/durosoft-shared/delvr/resizecontour%20demo.png)
+
 *Fig. 4: comparison of image re-sizing algorithms up-scaling from 16x16
 
 ### ResizeContour
@@ -157,7 +161,8 @@ small ones) in DSeg. The algorithm itself is relatively simple:
 
 
 ![Superpixel resizing via ResizeContour algorithm](https://storage.googleapis.com/durosoft-shared/delvr/segmentation_breakout.png)
-*Fig. 5: ResizeContour in action. The + signs represent pixels from the original superpixel.
+
+*Fig. 5: ResizeContour in action. The + signs represent pixels from the original superpixel.*
 
 
 Because we fill in overlapping polygons over each pixel in the image, this approach will
