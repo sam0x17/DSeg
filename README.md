@@ -12,7 +12,7 @@ While this project is only in its infancy, DSeg has already shown promising
 results on superpixel-wise object detection (is superpixel A part of an instance
 of object class B?). Below we cover the implementation details of DSeg, present
 preliminary experimental results, and discuss future work and additional
-enhancements that could help DSeg *make feature extraction great again!*
+enhancements.
 
 ## Motivation
 
