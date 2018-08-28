@@ -1,5 +1,5 @@
 # Invariant Superpixel Features for Object Detection & Localization
-*by Sam Kelly*
+*by Sam Johnson*
 
 ## Introducing DSeg
 
